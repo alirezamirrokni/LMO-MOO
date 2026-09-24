@@ -1,0 +1,10 @@
+{
+  "source_commit": "37319d14765595577b9b01fe91d6fcfca5ffbd7c",
+  "common": {"epochs":100,"batch_size":256,"lr":0.001,"scheduler_step":100,"scheduler_gamma":0.5},
+  "moon": {"weight_lr":0.0001,"gamma":0.001},
+  "famo": {"weight_lr":0.025,"gamma":0.01},
+  "ours": {"eta":0.0001,"alpha":0.1,"oracle":"spectral","weights":"entropic","momentum":"blended","ns_steps":5,"entropy_tau":0.0,"weight_kappa":0.0},
+  "seeds": [42,43,44],
+  "eta_grid": [0.00001,0.00005,0.0001,0.0005,0.001],
+  "notes": "MOON values from run_muon_vit.sh. FAMO values are released common_parser defaults, not claimed paper-selected optima. Ours are untuned initial settings. The paper reports three seeds but does not publish their IDs."
+}
