@@ -41,19 +41,22 @@ def fmt(x,key): return '--' if x is None or x.get(key) is None else f'{x[key]:.2
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--root',type=Path,default=Path('results/multimnist'))
+    p.add_argument('--ours-root',type=Path,help='Separate root for new Ours runs; baselines are read from --root without copying.')
+    p.add_argument('--section',choices=['all','comparison','ablations'],default='all')
     p.add_argument('--seeds',nargs='+',type=int,default=[42,43,44])
     p.add_argument('--baseline-source',choices=['reported','reproduced'],default='reported')
     p.add_argument('--out',type=Path,default=Path('results/multimnist/report'))
     a=p.parse_args()
     if len(set(a.seeds))!=len(a.seeds): p.error('Seeds must be unique')
     entries=[]; main={}
+    ours_root=a.ours_root if a.ours_root is not None else a.root
     for _,method,_ in BASELINES+[('Entropic LMO-MGDA','ours',None)]:
-        main[method]=aggregate(a.root,'main',method,a.seeds)
+        main[method]=aggregate(ours_root if method=='ours' else a.root,'main',method,a.seeds) if a.section!='ablations' else None
         if main[method]: entries.append(main[method])
     ablations={}
-    for _,name,variants in GROUPS:
+    for _,name,variants in (GROUPS if a.section!='comparison' else []):
         for value,_ in variants:
-            tag=f'{name}-{value}'; ablations[tag]=aggregate(a.root,tag,'ours',a.seeds)
+            tag=f'{name}-{value}'; ablations[tag]=aggregate(ours_root,tag,'ours',a.seeds)
             if ablations[tag]: entries.append(ablations[tag])
     # One comparison must use the same underlying generated data and metric convention.
     if len({(x['data_sha256'],x['metric']) for x in entries})>1:
@@ -62,24 +65,35 @@ def main():
     with (a.out/'results.csv').open('w',newline='') as f:
         fields=['tag','method','n_seeds','left','left_std','right','right_std','avg','avg_std','gap','gap_std','metric','data_sha256']
         writer=csv.DictWriter(f,fieldnames=fields); writer.writeheader(); writer.writerows(entries)
-    lines=[r'\begin{table}[t]\centering\scriptsize\setlength{\tabcolsep}{3.5pt}',
-           r'\begin{minipage}[t]{0.46\textwidth}\centering',r'\begin{tabular}{lccc}',
-           r'\toprule',r'Method & Left$\uparrow$ & Right$\uparrow$ & Avg.$\uparrow$\\',r'\midrule']
-    for label,method,reported in BASELINES:
-        cells=[f'{x:.2f}' for x in reported] if a.baseline_source=='reported' else [fmt(main[method],k) for k in ['left','right','avg']]
-        lines.append(label+' & '+' & '.join(cells)+r'\\')
-    lines += [r'\midrule',r'\textbf{Entropic LMO-MGDA} & '+' & '.join(fmt(main['ours'],k) for k in ['left','right','avg'])+r'\\',
-              r'\bottomrule',r'\end{tabular}',r'\end{minipage}\hfill',r'\begin{minipage}[t]{0.52\textwidth}\centering',
-              r'\begin{tabular}{llcc}',r'\toprule',r'Ablation & Variant & Avg.$\uparrow$ & Gap$\downarrow$\\',r'\midrule']
-    # Expand the slash-separated variants into rows, so each measured value is unambiguous.
-    for label,name,variants in GROUPS:
-        for i,(value,display) in enumerate(variants):
-            x=ablations[f'{name}-{value}']
-            lines.append((label if i==0 else '')+' & '+display+' & '+fmt(x,'avg')+' & '+fmt(x,'gap')+r'\\')
-    caption=f'MultiMNIST with the released MOON ViT backbone, test accuracy (\\%), {len(a.seeds)} seeds. '
-    caption+=r'Baseline rows are reported by \citet{moon2026}; ours and ablations are local measurements. ' if a.baseline_source=='reported' else 'All rows are local measurements. '
-    caption+='Final-epoch metrics; missing or incomplete runs are shown as --. Gap is the simplex Frank--Wolfe gap on a fixed training probe, using the exact geometry oracle.'
-    lines += [r'\bottomrule',r'\end{tabular}',r'\end{minipage}',r'\caption{'+caption+'}',r'\label{tab:mnist}',r'\end{table}']
+    lines=[r'\begin{table}[t]\centering\scriptsize\setlength{\tabcolsep}{3.5pt}']
+    if a.section=='all': lines.append(r'\begin{minipage}[t]{0.46\textwidth}\centering')
+    if a.section!='ablations':
+        lines += [r'\begin{tabular}{lccc}',r'\toprule',r'Method & Left$\uparrow$ & Right$\uparrow$ & Avg.$\uparrow$\\',r'\midrule']
+        for label,method,reported in BASELINES:
+            cells=[f'{x:.2f}' for x in reported] if a.baseline_source=='reported' else [fmt(main[method],k) for k in ['left','right','avg']]
+            lines.append(label+' & '+' & '.join(cells)+r'\\')
+        lines += [r'\midrule',r'\textbf{Entropic LMO-MGDA} & '+' & '.join(fmt(main['ours'],k) for k in ['left','right','avg'])+r'\\',
+                  r'\bottomrule',r'\end{tabular}']
+    if a.section=='all': lines += [r'\end{minipage}\hfill',r'\begin{minipage}[t]{0.52\textwidth}\centering']
+    if a.section!='comparison':
+        lines += [r'\begin{tabular}{llcc}',r'\toprule',r'Ablation & Variant & Avg.$\uparrow$ & Gap$\downarrow$\\',r'\midrule']
+        for label,name,variants in GROUPS:
+            for i,(value,display) in enumerate(variants):
+                x=ablations[f'{name}-{value}']
+                lines.append((label if i==0 else '')+' & '+display+' & '+fmt(x,'avg')+' & '+fmt(x,'gap')+r'\\')
+        lines += [r'\bottomrule',r'\end{tabular}']
+    if a.section=='all': lines.append(r'\end{minipage}')
+    caption=f'MultiMNIST with the released MOON ViT backbone, test accuracy (\%), {len(a.seeds)} seeds. '
+    if a.section!='ablations' and a.baseline_source=='reported':
+        caption+=r'Baseline rows are reported by \citet{moon2026}; Ours and any ablations are local measurements. '
+    else: caption+='All rows are local measurements. '
+    caption+='Final-epoch metrics; missing or incomplete runs are shown as --. '
+    if a.section!='comparison': caption+='Gap is the simplex Frank--Wolfe gap on a fixed training probe, using the exact geometry oracle.'
+    lines += [r'\caption{'+caption+'}',r'\label{tab:mnist'+('' if a.section=='all' else '-'+a.section)+'}',r'\end{table}']
+    provenance={'baseline_root':str(a.root.resolve()),'ours_root':str(ours_root.resolve()),
+                'section':a.section,'seeds':a.seeds,'baseline_source':a.baseline_source,
+                'configurations':[{k:x[k] for k in ['tag','method','n_seeds','data_sha256','metric']} for x in entries]}
+    (a.out/'provenance.json').write_text(json.dumps(provenance,indent=2)+'\n')
     (a.out/'table.tex').write_text('\n'.join(lines)+'\n')
     print(f'Wrote {a.out}/results.csv and table.tex; complete measured configurations: {len(entries)}')
 

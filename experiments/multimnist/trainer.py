@@ -31,6 +31,8 @@ def parser():
     p.add_argument('--epochs', type=int, default=CONFIG['common']['epochs'])
     p.add_argument('--batch-size', type=int, default=CONFIG['common']['batch_size'])
     p.add_argument('--lr', type=float, default=None, help='Model LR; defaults are method-specific (see configs.json).')
+    p.add_argument('--lr-schedule', choices=['reference','cosine'], default='reference')
+    p.add_argument('--min-lr-ratio', type=float, default=0.05, help='Cosine final LR / initial LR; ignored by reference schedule.')
     p.add_argument('--weight-lr', '--method-params-lr', type=float)
     p.add_argument('--gamma', type=float)
     p.add_argument('--eta', type=float, default=CONFIG['ours']['eta'])
@@ -149,7 +151,7 @@ def write_json(path,value):
     tmp=path.with_suffix(path.suffix+'.tmp'); tmp.write_text(json.dumps(value,indent=2,allow_nan=False)+'\n'); tmp.replace(path)
 
 
-def run(args):
+def resolve_args(args):
     if args.lr is None:
         args.lr = CONFIG['ours']['lr'] if args.method == 'ours' else CONFIG['common']['lr']
     if not 0 < args.val_fraction < 1:
@@ -162,6 +164,27 @@ def run(args):
         args.gamma=CONFIG['moon' if args.method=='moon' else 'famo']['gamma']
     if args.weight_lr<=0 or args.gamma<0:
         raise ValueError('weight-lr must be positive and gamma nonnegative')
+    if not 0 <= args.min_lr_ratio <= 1:
+        raise ValueError('min-lr-ratio must be in [0, 1]')
+    if args.lr_schedule != 'reference' and args.method != 'ours':
+        raise ValueError('Alternative schedule is only enabled for Ours; baseline recipes remain fixed')
+    return args
+
+
+def run_signature(args, fingerprint):
+    resolve_args(args)
+    ignored = {'resume','stop_after_epoch','output_root','data_path','device','workers','threads','cache_data'}
+    signature = {k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items() if k not in ignored}
+    # Preserve exact v2 signatures for the unchanged reference schedule.
+    if args.lr_schedule == 'reference':
+        signature.pop('lr_schedule', None)
+        signature.pop('min_lr_ratio', None)
+    signature.update(data_sha256=fingerprint, implementation='multimnist-v2', source_commit=CONFIG['source_commit'])
+    return signature
+
+
+def run(args):
+    resolve_args(args)
     if args.smoke:
         args.epochs=1; args.batch_size=4
     if Path(args.tag).name!=args.tag or args.tag in {'.','..'}:
@@ -171,7 +194,9 @@ def run(args):
     print(f'Run: method={args.method}, seed={args.seed}, selection={args.selection}, lr={args.lr:g}, eta={args.eta:g}, alpha={args.alpha:g}', flush=True)
     model=MultiMNISTViT().to(device)
     method,optimizer=make_method(model,args,device)
-    scheduler=torch.optim.lr_scheduler.StepLR(optimizer,step_size=100,gamma=0.5)
+    scheduler=(torch.optim.lr_scheduler.StepLR(optimizer,step_size=100,gamma=0.5)
+               if args.lr_schedule == 'reference' else
+               torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs,eta_min=args.lr*args.min_lr_ratio))
     if args.smoke:
         gen=torch.Generator().manual_seed(999)
         train_set=torch.utils.data.TensorDataset(torch.rand(8,1,28,43,generator=gen),
@@ -208,8 +233,7 @@ def run(args):
     out=args.output_root/prefix/args.method/f'seed{args.seed}'
     out.mkdir(parents=True,exist_ok=True)
     config={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()}
-    signature={k:v for k,v in config.items() if k not in {'resume','stop_after_epoch','output_root','data_path','device','workers','threads','cache_data'}}
-    signature.update(data_sha256=fingerprint,implementation='multimnist-v2',source_commit=CONFIG['source_commit'])
+    signature=run_signature(args, fingerprint)
     ckpt=out/'checkpoint.pt'; start=0; rows=[]; elapsed=0.0
     if ckpt.exists():
         if not args.resume:
@@ -228,6 +252,7 @@ def run(args):
     end_epoch=min(args.epochs,args.stop_after_epoch) if args.stop_after_epoch else args.epochs
     for epoch in range(start,end_epoch):
         begin=time.monotonic(); train_cost=np.zeros(4)
+        model_lr=optimizer.param_groups[0]['lr']
         for batch in train_loader:
             batch=tuple(v.to(device) for v in batch)
             train_cost+=np.array(train_step(model,method,optimizer,batch,args.method))/len(train_loader)
@@ -243,7 +268,7 @@ def run(args):
         chosen=upstream if args.metric=='upstream' else sample
         epoch_seconds=time.monotonic()-begin
         elapsed+=epoch_seconds
-        row=dict(epoch=epoch+1,left=100*chosen[1],right=100*chosen[3],avg=50*(chosen[1]+chosen[3]),
+        row=dict(epoch=epoch+1,model_lr=model_lr,left=100*chosen[1],right=100*chosen[3],avg=50*(chosen[1]+chosen[3]),
                  gap=gap,support=support,relative_gap=None if not support else gap/support,
                  weights=method.weights.detach().cpu().tolist() if args.method=='ours' else None,
                  epoch_seconds=epoch_seconds,train=train_cost.tolist(),test_upstream=upstream.tolist(),
@@ -255,7 +280,7 @@ def run(args):
         write_json(out/'summary.json',dict(row,completed=epoch+1==args.epochs,smoke=args.smoke,method=args.method,
                    seed=args.seed,tag=args.tag,signature=signature,metric=args.metric,selection=args.selection))
         print(json.dumps(dict(method=args.method,seed=args.seed,selection=args.selection,
-              **{k:row[k] for k in ['epoch','left','right','avg','gap','weights','epoch_seconds']},
+              **{k:row[k] for k in ['epoch','model_lr','left','right','avg','gap','weights','epoch_seconds']},
               train_left=100*train_cost[1],train_right=100*train_cost[3],
               train_loss_left=train_cost[0],train_loss_right=train_cost[2])),flush=True)
         if args.stop_after_epoch and epoch+1>=args.stop_after_epoch:
