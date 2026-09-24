@@ -9,11 +9,11 @@ import time
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from experiments.checkpointing import atomic_torch_save, load_torch, capture_rng_state, restore_rng_state
 from experiments.utils import set_seed
 from experiments.multimnist.models_vit import MultiMNISTViT
-from experiments.multimnist.data import MultiMNISTDataset
+from experiments.multimnist.data import MultiMNISTDataset, CachedDataset
 from methods.moon import ReferenceMOON, make_reference_optimizer, previous_update_scores
 from methods.moon_reference_weights import MGDA, FAMO, LinearScalarization
 from methods.paper_ablation import PaperAblation
@@ -30,7 +30,7 @@ def parser():
     p.add_argument('--seed', type=int, default=42)
     p.add_argument('--epochs', type=int, default=CONFIG['common']['epochs'])
     p.add_argument('--batch-size', type=int, default=CONFIG['common']['batch_size'])
-    p.add_argument('--lr', type=float, default=CONFIG['common']['lr'])
+    p.add_argument('--lr', type=float, default=None, help='Model LR; defaults are method-specific (see configs.json).')
     p.add_argument('--weight-lr', '--method-params-lr', type=float)
     p.add_argument('--gamma', type=float)
     p.add_argument('--eta', type=float, default=CONFIG['ours']['eta'])
@@ -40,6 +40,10 @@ def parser():
     p.add_argument('--momentum', choices=['blended','per-task','none'], default='blended')
     p.add_argument('--ns-steps', type=int, default=5)
     p.add_argument('--device', default='cuda:0' if torch.cuda.is_available() else 'cpu')
+    p.add_argument('--selection', choices=['test','validation'], default='test', help='Validation uses only a fixed held-out portion of the training split.')
+    p.add_argument('--val-fraction', type=float, default=0.1)
+    p.add_argument('--split-seed', type=int, default=2026)
+    p.add_argument('--cache-data', action=argparse.BooleanOptionalAction, default=True, help='Cache deterministic image preprocessing in host RAM.')
     p.add_argument('--workers', type=int, default=0)
     p.add_argument('--threads', type=int, default=4)
     p.add_argument('--tag', default='main')
@@ -129,10 +133,10 @@ def evaluate(model,loader,device):
     return batch_means/len(loader),sums/count
 
 
-def data_fingerprint(root):
+def data_fingerprint(root, splits=('train','test')):
     h=hashlib.sha256()
     # Pin the labels and every referenced image, including preprocessing version.
-    for split in ['train','test']:
+    for split in splits:
         path=root/split/'labels.csv'; h.update(split.encode()); h.update(path.read_bytes())
         for row in csv.reader(path.open()):
             if row:
@@ -146,6 +150,10 @@ def write_json(path,value):
 
 
 def run(args):
+    if args.lr is None:
+        args.lr = CONFIG['ours']['lr'] if args.method == 'ours' else CONFIG['common']['lr']
+    if not 0 < args.val_fraction < 1:
+        raise ValueError('val-fraction must be between 0 and 1')
     if args.epochs<=0 or args.batch_size<=0 or args.lr<=0:
         raise ValueError('epochs, batch size, and lr must be positive')
     if args.weight_lr is None:
@@ -160,6 +168,7 @@ def run(args):
         raise ValueError('tag must be a simple directory name')
     torch.set_num_threads(args.threads)
     device=torch.device(args.device); set_seed(args.seed)
+    print(f'Run: method={args.method}, seed={args.seed}, selection={args.selection}, lr={args.lr:g}, eta={args.eta:g}, alpha={args.alpha:g}', flush=True)
     model=MultiMNISTViT().to(device)
     method,optimizer=make_method(model,args,device)
     scheduler=torch.optim.lr_scheduler.StepLR(optimizer,step_size=100,gamma=0.5)
@@ -170,18 +179,37 @@ def run(args):
         test_set=train_set
         fingerprint='synthetic-smoke-only'
     else:
-        train_set=MultiMNISTDataset(str(args.data_path),'train')
-        test_set=MultiMNISTDataset(str(args.data_path),'test')
-        fingerprint=data_fingerprint(args.data_path)
+        full_train=MultiMNISTDataset(str(args.data_path),'train')
+        if args.cache_data:
+            full_train=CachedDataset(full_train)
+        if args.selection == 'validation':
+            # A private generator makes the split independent of model/train RNG.
+            order=torch.randperm(len(full_train), generator=torch.Generator().manual_seed(args.split_seed))
+            n_val=int(len(full_train)*args.val_fraction)
+            if n_val < 1 or n_val >= len(full_train):
+                raise ValueError('Validation split must leave nonempty train and validation sets')
+            test_set=Subset(full_train, order[:n_val].tolist())
+            train_set=Subset(full_train, order[n_val:].tolist())
+            # Do not open test labels or images during hyperparameter selection.
+            fingerprint=data_fingerprint(args.data_path, splits=('train',))
+        else:
+            train_set=full_train
+            test_set=MultiMNISTDataset(str(args.data_path),'test')
+            if args.cache_data:
+                test_set=CachedDataset(test_set)
+            fingerprint=data_fingerprint(args.data_path)
+        print(f'Data ready: train={len(train_set)}, {args.selection}={len(test_set)}, cache={args.cache_data}', flush=True)
     # Same loader construction/RNG consumption as upstream. Restore global RNG at epoch boundaries.
     train_loader=DataLoader(train_set,batch_size=args.batch_size,shuffle=True,num_workers=args.workers)
     test_loader=DataLoader(test_set,batch_size=args.batch_size,shuffle=False,num_workers=args.workers)
+    if args.selection == 'validation' and args.tag == 'main':
+        raise ValueError('Validation runs must use a tuning tag, not main')
     prefix='smoke' if args.smoke else args.tag
     out=args.output_root/prefix/args.method/f'seed{args.seed}'
     out.mkdir(parents=True,exist_ok=True)
     config={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()}
-    signature={k:v for k,v in config.items() if k not in {'resume','stop_after_epoch','output_root','data_path','device','workers','threads'}}
-    signature.update(data_sha256=fingerprint,implementation='multimnist-v1',source_commit=CONFIG['source_commit'])
+    signature={k:v for k,v in config.items() if k not in {'resume','stop_after_epoch','output_root','data_path','device','workers','threads','cache_data'}}
+    signature.update(data_sha256=fingerprint,implementation='multimnist-v2',source_commit=CONFIG['source_commit'])
     ckpt=out/'checkpoint.pt'; start=0; rows=[]; elapsed=0.0
     if ckpt.exists():
         if not args.resume:
@@ -193,8 +221,12 @@ def run(args):
         load_method_state(method,state['method']); scheduler.load_state_dict(state['scheduler'])
         rows=state['rows']; start=state['epoch']; elapsed=state['elapsed']
         restore_rng_state(state['rng'])
+    print(f'Checkpoint: {start}/{args.epochs} epochs completed', flush=True)
+    if start >= args.epochs:
+        print(f'Already complete: {out}', flush=True)
     write_json(out/'config.json',dict(config,signature=signature))
-    for epoch in range(start,args.epochs):
+    end_epoch=min(args.epochs,args.stop_after_epoch) if args.stop_after_epoch else args.epochs
+    for epoch in range(start,end_epoch):
         begin=time.monotonic(); train_cost=np.zeros(4)
         for batch in train_loader:
             batch=tuple(v.to(device) for v in batch)
@@ -209,17 +241,23 @@ def run(args):
             with torch.enable_grad():
                 gap,support=method.inner_gap(loss_vector(model(x),y0,y1),list(model.parameters()))
         chosen=upstream if args.metric=='upstream' else sample
-        elapsed+=time.monotonic()-begin
+        epoch_seconds=time.monotonic()-begin
+        elapsed+=epoch_seconds
         row=dict(epoch=epoch+1,left=100*chosen[1],right=100*chosen[3],avg=50*(chosen[1]+chosen[3]),
-                 gap=gap,support=support,train=train_cost.tolist(),test_upstream=upstream.tolist(),
+                 gap=gap,support=support,relative_gap=None if not support else gap/support,
+                 weights=method.weights.detach().cpu().tolist() if args.method=='ours' else None,
+                 epoch_seconds=epoch_seconds,train=train_cost.tolist(),test_upstream=upstream.tolist(),
                  test_sample=sample.tolist(),elapsed_seconds=elapsed)
         rows.append(row)
         atomic_torch_save(dict(signature=signature,epoch=epoch+1,model=model.state_dict(),optimizer=optimizer.state_dict(),
                          scheduler=scheduler.state_dict(),method=method_state(method),rng=capture_rng_state(),rows=rows,elapsed=elapsed),ckpt)
         write_json(out/'history.json',rows)
         write_json(out/'summary.json',dict(row,completed=epoch+1==args.epochs,smoke=args.smoke,method=args.method,
-                   seed=args.seed,tag=args.tag,signature=signature,metric=args.metric))
-        print(json.dumps({k:row[k] for k in ['epoch','left','right','avg','gap']}),flush=True)
+                   seed=args.seed,tag=args.tag,signature=signature,metric=args.metric,selection=args.selection))
+        print(json.dumps(dict(method=args.method,seed=args.seed,selection=args.selection,
+              **{k:row[k] for k in ['epoch','left','right','avg','gap','weights','epoch_seconds']},
+              train_left=100*train_cost[1],train_right=100*train_cost[3],
+              train_loss_left=train_cost[0],train_loss_right=train_cost[2])),flush=True)
         if args.stop_after_epoch and epoch+1>=args.stop_after_epoch:
             break
     print(f'Outputs: {out}',flush=True)

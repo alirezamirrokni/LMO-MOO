@@ -21,6 +21,8 @@ def aggregate(root,tag,method,seeds):
         if not p.exists(): return None
         x=json.loads(p.read_text())
         if x.get('smoke') or not x.get('completed'): return None
+        if x.get('selection', 'test') != 'test':
+            raise ValueError(f'Validation results cannot be reported as test results: {p}')
         if x['seed']!=seed or x['method']!=method or x['tag']!=tag: raise ValueError(f'Identity mismatch: {p}')
         values.append(x)
     sigs=[{k:v for k,v in x['signature'].items() if k not in {'seed'}} for x in values]

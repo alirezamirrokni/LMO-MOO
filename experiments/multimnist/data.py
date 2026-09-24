@@ -117,3 +117,23 @@ def get_dataloaders(
     )
 
     return train_loader, test_loader
+
+
+class CachedDataset(Dataset):
+    """Materialize the existing deterministic transform without RNG changes.
+
+    Used only with MultiMNISTDataset's default Resize + ToTensor pipeline.
+    The default 10k dataset uses about 46 MiB of image storage in RAM.
+    """
+    def __init__(self, dataset):
+        print(f'Caching {len(dataset)} preprocessed images in host RAM...', flush=True)
+        rows = [dataset[i] for i in range(len(dataset))]
+        self.images = torch.stack([row[0] for row in rows])
+        self.left = torch.tensor([row[1] for row in rows], dtype=torch.long)
+        self.right = torch.tensor([row[2] for row in rows], dtype=torch.long)
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, index):
+        return self.images[index], self.left[index], self.right[index]

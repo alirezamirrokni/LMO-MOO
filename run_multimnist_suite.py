@@ -1,6 +1,7 @@
 """Sequential launcher: defaults to ONLY ours, three seeds; resume-safe."""
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -36,13 +37,18 @@ def main():
     # Prevent accidental redefinition of identities controlled by the suite.
     if any(x.split('=')[0] in {'--tag','--method','--seed','--resume'} for x in extra):
         p.error('tag, method, seed, and resume are controlled by the suite')
-    for tag,method,flags in jobs(a.suite,a.methods):
+    planned=jobs(a.suite,a.methods)
+    total=len(planned)*len(a.seeds); completed=0
+    child_env=dict(os.environ, PYTHONUNBUFFERED='1')
+    for tag,method,flags in planned:
         for seed in a.seeds:
-            cmd=[sys.executable,str(ROOT/'run_multimnist.py'),'--method',method,'--seed',str(seed),
+            cmd=[sys.executable,'-u',str(ROOT/'run_multimnist.py'),'--method',method,'--seed',str(seed),
                  '--tag',tag,'--data-path',str(a.data_path.resolve()),'--output-root',str(a.output_root.resolve()),'--resume']
             if a.device: cmd+=['--device',a.device]
             cmd+=extra+flags
+            print(f'\nRun {completed+1}/{total}: {method}, seed {seed}, {tag}',flush=True)
             print(' '.join(cmd),flush=True)
-            if not a.dry_run: subprocess.run(cmd,check=True,cwd=ROOT)
+            if not a.dry_run: subprocess.run(cmd,check=True,cwd=ROOT,env=child_env)
+            completed+=1
 
 if __name__=='__main__': main()
