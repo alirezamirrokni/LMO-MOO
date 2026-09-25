@@ -39,6 +39,7 @@ def parser():
     p.add_argument('--gamma', type=float)
     p.add_argument('--eta', type=float, default=CONFIG['ours']['eta'])
     p.add_argument('--alpha', type=float, default=CONFIG['ours']['alpha'])
+    p.add_argument('--ns-steps', dest='ns_steps', type=int, default=1)
     p.add_argument('--oracle', choices=['spectral','l2','sign'], default='spectral')
     p.add_argument('--weights', choices=['entropic','projected'], default='entropic')
     p.add_argument('--momentum', choices=['blended','per-task','none'], default='blended')
