@@ -42,6 +42,8 @@ def parser():
     p.add_argument('--oracle', choices=['spectral','l2','sign'], default='spectral')
     p.add_argument('--weights', choices=['entropic','projected'], default='entropic')
     p.add_argument('--momentum', choices=['blended','per-task','none'], default='blended')
+    p.add_argument('--kappa', type=float, default=0.0,
+                   help='Lower bound on entropic LMO task weights: w_i >= kappa.')
     p.add_argument('--ns-steps', type=int, default=5)
     p.add_argument('--device', default='cuda:0' if torch.cuda.is_available() else 'cpu')
     p.add_argument('--selection', choices=['test','validation'], default='test', help='Validation uses only a fixed held-out portion of the training split.')
@@ -61,7 +63,7 @@ def parser():
 def make_method(model, args, device):
     if args.method == 'ours':
         method = PaperAblation(2, device, eta=args.eta, alpha=args.alpha, ns_steps=args.ns_steps,
-                              entropy_tau=0, weight_kappa=0, oracle=args.oracle,
+                              entropy_tau=0, weight_kappa=args.kappa, oracle=args.oracle,
                               weight_update=args.weights, momentum=args.momentum, log_every=0)
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
     else:
