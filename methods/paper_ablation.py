@@ -42,14 +42,11 @@ def positive_oracle(buffer, parameters, geometry='spectral', ns_steps=5, exact=F
 
 
 class PaperAblation(EntropicLMOMGDA):
-    def __init__(self, *args, oracle='spectral', weight_update='entropic', momentum='blended', clipping='task', clip_value=1.0, **kwargs):
+    def __init__(self, *args, oracle='spectral', weight_update='entropic', momentum='blended', **kwargs):
         super().__init__(*args, **kwargs)
-        if oracle not in {'spectral','l2','sign'} or weight_update not in {'entropic','projected'} or momentum not in {'blended','per-task','none'} or clipping not in {'task','none'}:
+        if oracle not in {'spectral','l2','sign'} or weight_update not in {'entropic','projected'} or momentum not in {'blended','per-task','none'}:
             raise ValueError('Invalid paper ablation')
-        if clip_value <= 0:
-            raise ValueError('clip_value must be positive')
         self.oracle, self.weight_update, self.momentum = oracle, weight_update, momentum
-        self.clipping, self.clip_value = clipping, float(clip_value)
         if weight_update == 'projected' and (self.entropy_tau or self.weight_kappa):
             raise ValueError('Projected ablation is defined with tau=kappa=0')
         self.task_momentum = None
@@ -71,13 +68,6 @@ class PaperAblation(EntropicLMOMGDA):
         else:
             buffer = aggregate
         direction = positive_oracle(buffer, params, self.oracle, self.ns_steps)
-        # Direction clipping is the key stabilization mechanism that differentiates
-        # our LMO update from the un-clipped MOON-style polar update. The ablation
-        # disables this normalization to measure its contribution.
-        if self.clipping == 'task':
-            direction_norm = direction.norm()
-            if float(direction_norm.item()) > self.clip_value:
-                direction = direction * (self.clip_value / direction_norm.clamp_min(1e-12))
         scores = gradients @ (-direction)
         if self.weight_update == 'entropic':
             self._paper_weight_update(scores)
