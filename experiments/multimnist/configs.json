@@ -1,10 +1,60 @@
 {
   "source_commit": "37319d14765595577b9b01fe91d6fcfca5ffbd7c",
-  "common": {"epochs":100,"batch_size":256,"lr":0.001,"scheduler_step":100,"scheduler_gamma":0.5},
-  "moon": {"weight_lr":0.0001,"gamma":0.001},
-  "famo": {"weight_lr":0.025,"gamma":0.01},
-  "ours": {"eta":0.0001,"alpha":0.1,"oracle":"spectral","weights":"entropic","momentum":"blended","ns_steps":5,"entropy_tau":0.0,"weight_kappa":0.0},
-  "seeds": [42,43,44],
-  "eta_grid": [0.00001,0.00005,0.0001,0.0005,0.001],
-  "notes": "MOON values from run_muon_vit.sh. FAMO values are released common_parser defaults, not claimed paper-selected optima. Ours are untuned initial settings. The paper reports three seeds but does not publish their IDs."
+  "common": {
+    "epochs": 100,
+    "batch_size": 256,
+    "lr": 0.001,
+    "scheduler_step": 100,
+    "scheduler_gamma": 0.5
+  },
+  "moon": {
+    "weight_lr": 0.0001,
+    "gamma": 0.001
+  },
+  "famo": {
+    "weight_lr": 0.025,
+    "gamma": 0.01
+  },
+  "ours": {
+    "eta": 0.0001,
+    "alpha": 0.1,
+    "oracle": "spectral",
+    "weights": "entropic",
+    "momentum": "blended",
+    "ns_steps": 5,
+    "entropy_tau": 0.0,
+    "weight_kappa": 0.0,
+    "lr": 0.01
+  },
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "eta_grid": [
+    1e-05,
+    5e-05,
+    0.0001,
+    0.0005,
+    0.001
+  ],
+  "notes": "MOON hyperparameters are from run_muon_vit.sh. FAMO values are released common_parser defaults, not claimed paper-selected optima. Ours uses a method-specific model LR; 0.01 is a validation-supported starting point, not a claimed optimum. Run run_multimnist_tune.py for staged LR/momentum selection on a fixed train-only validation split, followed by fresh final training on the full training split. The previous version reused the common optimizer LR (0.001) for the uncalibrated LMO update. The paper does not publish its training seeds or generated dataset hash.",
+  "tuning": {
+    "lr_grid": [
+      0.001,
+      0.003,
+      0.01,
+      0.03
+    ],
+    "seed": 42,
+    "split_seed": 2026,
+    "val_fraction": 0.1,
+    "screen_epochs": 40,
+    "finalists": 2,
+    "epochs": 100,
+    "alpha_grid": [
+      0.1,
+      0.5
+    ]
+  }
 }

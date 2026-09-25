@@ -1,0 +1,211 @@
+{
+  "scope": "Engineering diagnosis on training-only validation data; these are NOT final test results or three-seed paper results.",
+  "protocol": {
+    "device": "CPU",
+    "torch_version": "2.14.0+cpu",
+    "seed": 42,
+    "generation_seed": 2026,
+    "split_seed": 2026,
+    "train_count": 9000,
+    "validation_count": 1000,
+    "batch_size": 256,
+    "validation_metric": "sample-weighted",
+    "train_sha256": "573fc036b3d31dea167f1ef079a3942463dfbad2efdf1ef7550a8fcb1efead93",
+    "test_used": false
+  },
+  "conclusion": "Reusing model lr=0.001 across MOON and the differently scaled LMO direction undertrains this ViT. lr=0.01 substantially improves the controlled validation run. Larger steps are not uniformly better: lr=0.03 is poor. The notebook therefore selects LR and momentum injection on validation before fresh full-training-set runs.",
+  "controlled_40_epoch_trials": [
+    {
+      "method": "ours",
+      "lr": 0.001,
+      "alpha": 0.1,
+      "epoch": 40,
+      "validation_left": 54.79999980926513,
+      "validation_right": 66.60000052452088,
+      "validation_avg": 60.700000166893005,
+      "trajectory": [
+        {
+          "epoch": 10,
+          "validation_avg": 24.699999791383746
+        },
+        {
+          "epoch": 20,
+          "validation_avg": 41.64999984502792
+        },
+        {
+          "epoch": 30,
+          "validation_avg": 51.49999965429306
+        },
+        {
+          "epoch": 40,
+          "validation_avg": 60.700000166893005
+        }
+      ]
+    },
+    {
+      "method": "ours",
+      "lr": 0.01,
+      "alpha": 0.1,
+      "epoch": 40,
+      "validation_left": 76.99999995231629,
+      "validation_right": 81.29999976158142,
+      "validation_avg": 79.14999985694887,
+      "trajectory": [
+        {
+          "epoch": 10,
+          "validation_avg": 42.35000015497208
+        },
+        {
+          "epoch": 20,
+          "validation_avg": 63.250000214576716
+        },
+        {
+          "epoch": 30,
+          "validation_avg": 72.10000000000001
+        },
+        {
+          "epoch": 40,
+          "validation_avg": 79.14999985694887
+        }
+      ]
+    },
+    {
+      "method": "ours",
+      "lr": 0.03,
+      "alpha": 0.1,
+      "epoch": 40,
+      "validation_left": 19.599999928474425,
+      "validation_right": 42.099999690055846,
+      "validation_avg": 30.84999980926514,
+      "trajectory": [
+        {
+          "epoch": 10,
+          "validation_avg": 15.799999850988389
+        },
+        {
+          "epoch": 20,
+          "validation_avg": 19.65000009536743
+        },
+        {
+          "epoch": 30,
+          "validation_avg": 28.49999997615814
+        },
+        {
+          "epoch": 40,
+          "validation_avg": 30.84999980926514
+        }
+      ]
+    },
+    {
+      "method": "ours",
+      "lr": 0.01,
+      "alpha": 0.5,
+      "epoch": 40,
+      "validation_left": 65.19999938011169,
+      "validation_right": 74.2,
+      "validation_avg": 69.69999969005585,
+      "trajectory": [
+        {
+          "epoch": 10,
+          "validation_avg": 48.24999986886978
+        },
+        {
+          "epoch": 20,
+          "validation_avg": 59.6000001192093
+        },
+        {
+          "epoch": 30,
+          "validation_avg": 62.949999642372134
+        },
+        {
+          "epoch": 40,
+          "validation_avg": 69.69999969005585
+        }
+      ]
+    },
+    {
+      "method": "moon",
+      "lr": 0.001,
+      "alpha": null,
+      "epoch": 40,
+      "validation_left": 82.50000014305114,
+      "validation_right": 82.00000047683716,
+      "validation_avg": 82.25000030994416,
+      "trajectory": [
+        {
+          "epoch": 10,
+          "validation_avg": 45.29999977350235
+        },
+        {
+          "epoch": 20,
+          "validation_avg": 69.94999959468842
+        },
+        {
+          "epoch": 30,
+          "validation_avg": 79.44999997615814
+        },
+        {
+          "epoch": 40,
+          "validation_avg": 82.25000030994416
+        }
+      ]
+    }
+  ],
+  "full_100_epoch_validation": {
+    "method": "ours",
+    "lr": 0.01,
+    "alpha": 0.1,
+    "eta": 0.0001,
+    "left": 89.10000066757202,
+    "right": 88.90000052452088,
+    "avg": 89.00000059604645,
+    "gap": 1.382905612867381,
+    "weights": [
+      0.4976847901175589,
+      0.5023152098824412
+    ],
+    "completed": true
+  },
+  "second_step_rms_diagnostic": {
+    "description": "Separate same-initialization trajectories, seed 42, first 256 generated training images repeated for two steps, lr=0.001 for both methods. Values are RMS parameter changes on step two; not universal scale factors.",
+    "parameters": {
+      "pos_emb": {
+        "ours": 1.9714076188392937e-05,
+        "moon": 0.0009851690847426653
+      },
+      "cls_token": {
+        "ours": 0.00017410996952094138,
+        "moon": 0.000995863345451653
+      },
+      "patch_emb.weight": {
+        "ours": 0.00016103891539387405,
+        "moon": 0.0009891224326565862
+      },
+      "transformer_enc.layers.0.linear1.weight": {
+        "ours": 0.00010735169053077698,
+        "moon": 0.00017276995640713722
+      },
+      "transformer_enc.layers.0.norm1.weight": {
+        "ours": 2.4671715436852537e-05,
+        "moon": 0.0009898446733132005
+      },
+      "head1.weight": {
+        "ours": 0.00016333296662196517,
+        "moon": 0.0009928864892572165
+      },
+      "head1.bias": {
+        "ours": 5.656860594172031e-05,
+        "moon": 0.0009938192088156939
+      }
+    }
+  },
+  "verification": [
+    "All seven MultiMNIST methods completed a real-image one-epoch plumbing check.",
+    "Cached preprocessing is tensor-identical and does not consume RNG.",
+    "Cached/uncached training and interrupted/resumed training produced exactly equal model tensors on a small real-image check.",
+    "Repeated staged stop is idempotent.",
+    "Validation training and staged tuning worked with no test directory present.",
+    "MOON backbone and method update implementations were not changed."
+  ],
+  "reproduction": "python run_multimnist.py --method ours --lr 0.01 --alpha 0.1 --eta 0.0001 --selection validation --metric sample --split-seed 2026 --val-fraction 0.1 --seed 42 --epochs 100 --batch-size 256 --data-path DATA --output-root AUDIT_OUTPUT --tag audit --device cpu --threads 2 --resume"
+}
