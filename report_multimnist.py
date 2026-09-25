@@ -83,7 +83,7 @@ def main():
                 lines.append((label if i==0 else '')+' & '+display+' & '+fmt(x,'avg')+' & '+fmt(x,'gap')+r'\\')
         lines += [r'\bottomrule',r'\end{tabular}']
     if a.section=='all': lines.append(r'\end{minipage}')
-    caption=f'MultiMNIST with the released MOON ViT backbone, test accuracy (\%), {len(a.seeds)} seeds. '
+    caption=fr'MultiMNIST with the released MOON ViT backbone, test accuracy (\%), {len(a.seeds)} seeds. '
     if a.section!='ablations' and a.baseline_source=='reported':
         caption+=r'Baseline rows are reported by \citet{moon2026}; Ours and any ablations are local measurements. '
     else: caption+='All rows are local measurements. '

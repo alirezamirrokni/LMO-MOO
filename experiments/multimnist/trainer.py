@@ -3,6 +3,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import time
@@ -31,7 +32,8 @@ def parser():
     p.add_argument('--epochs', type=int, default=CONFIG['common']['epochs'])
     p.add_argument('--batch-size', type=int, default=CONFIG['common']['batch_size'])
     p.add_argument('--lr', type=float, default=None, help='Model LR; defaults are method-specific (see configs.json).')
-    p.add_argument('--lr-schedule', choices=['reference','cosine'], default='reference')
+    p.add_argument('--lr-schedule', choices=['reference','cosine','late-cosine'], default='reference')
+    p.add_argument('--cooldown-start', type=int, default=80, help='Number of constant-LR epochs before late-cosine decay; ignored by other schedules.')
     p.add_argument('--min-lr-ratio', type=float, default=0.05, help='Cosine final LR / initial LR; ignored by reference schedule.')
     p.add_argument('--weight-lr', '--method-params-lr', type=float)
     p.add_argument('--gamma', type=float)
@@ -168,6 +170,8 @@ def resolve_args(args):
         raise ValueError('min-lr-ratio must be in [0, 1]')
     if args.lr_schedule != 'reference' and args.method != 'ours':
         raise ValueError('Alternative schedule is only enabled for Ours; baseline recipes remain fixed')
+    if args.lr_schedule == 'late-cosine' and not 0 <= args.cooldown_start < args.epochs:
+        raise ValueError('cooldown-start must be in [0, epochs)')
     return args
 
 
@@ -175,12 +179,27 @@ def run_signature(args, fingerprint):
     resolve_args(args)
     ignored = {'resume','stop_after_epoch','output_root','data_path','device','workers','threads','cache_data'}
     signature = {k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items() if k not in ignored}
+    if args.lr_schedule != 'late-cosine':
+        signature.pop('cooldown_start', None)
     # Preserve exact v2 signatures for the unchanged reference schedule.
     if args.lr_schedule == 'reference':
         signature.pop('lr_schedule', None)
         signature.pop('min_lr_ratio', None)
     signature.update(data_sha256=fingerprint, implementation='multimnist-v2', source_commit=CONFIG['source_commit'])
     return signature
+
+
+def make_scheduler(optimizer, args):
+    if args.lr_schedule == 'reference':
+        return torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
+    if args.lr_schedule == 'cosine':
+        return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr*args.min_lr_ratio)
+    # The first cooldown_start training epochs retain the original learning rate.
+    # The final training epoch uses exactly min_lr_ratio times the initial LR.
+    def factor(epoch_index):
+        progress = min(1.0, max(0.0, (epoch_index-args.cooldown_start+1)/(args.epochs-args.cooldown_start)))
+        return args.min_lr_ratio + (1-args.min_lr_ratio)*0.5*(1+math.cos(math.pi*progress))
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, factor)
 
 
 def run(args):
@@ -194,9 +213,7 @@ def run(args):
     print(f'Run: method={args.method}, seed={args.seed}, selection={args.selection}, lr={args.lr:g}, eta={args.eta:g}, alpha={args.alpha:g}', flush=True)
     model=MultiMNISTViT().to(device)
     method,optimizer=make_method(model,args,device)
-    scheduler=(torch.optim.lr_scheduler.StepLR(optimizer,step_size=100,gamma=0.5)
-               if args.lr_schedule == 'reference' else
-               torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs,eta_min=args.lr*args.min_lr_ratio))
+    scheduler=make_scheduler(optimizer, args)
     if args.smoke:
         gen=torch.Generator().manual_seed(999)
         train_set=torch.utils.data.TensorDataset(torch.rand(8,1,28,43,generator=gen),
