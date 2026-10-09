@@ -1,4 +1,3 @@
-"""Sequential launcher: defaults to ONLY ours, three seeds; resume-safe."""
 import argparse
 import json
 import os
@@ -6,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-ROOT=Path(__file__).resolve().parent
+ROOT=Path(__file__).resolve().parents[2]
 CONFIG=json.loads((ROOT/'experiments/multimnist/configs.json').read_text())
 
 
@@ -25,7 +24,7 @@ def jobs(suite,methods):
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__)
+    p=argparse.ArgumentParser(description='Sequential launcher: defaults to ONLY ours, three seeds; resume-safe.')
     p.add_argument('--suite',choices=['main','ablations','all'],default='main')
     p.add_argument('--methods',type=lambda x: {'entropic-lmo-mgda':'ours','entropic_lmo_mgda':'ours'}.get(x,x),nargs='+',default=['ours'],choices=['ours','mgda','mgda_muon','famo','famo_muon','muon_ls','moon'])
     p.add_argument('--seeds',nargs='+',type=int,default=CONFIG['seeds'])
@@ -34,7 +33,6 @@ def main():
     p.add_argument('--device',default=None)
     p.add_argument('--dry-run',action='store_true')
     a,extra=p.parse_known_args()
-    # Prevent accidental redefinition of identities controlled by the suite.
     if any(x.split('=')[0] in {'--tag','--method','--seed','--resume'} for x in extra):
         p.error('tag, method, seed, and resume are controlled by the suite')
     planned=jobs(a.suite,a.methods)
@@ -42,7 +40,7 @@ def main():
     child_env=dict(os.environ, PYTHONUNBUFFERED='1')
     for tag,method,flags in planned:
         for seed in a.seeds:
-            cmd=[sys.executable,'-u',str(ROOT/'run_multimnist.py'),'--method',method,'--seed',str(seed),
+            cmd=[sys.executable,'-u',str(Path(__file__).with_name('run_multimnist.py')),'--method',method,'--seed',str(seed),
                  '--tag',tag,'--data-path',str(a.data_path.resolve()),'--output-root',str(a.output_root.resolve()),'--resume']
             if a.device: cmd+=['--device',a.device]
             cmd+=extra+flags

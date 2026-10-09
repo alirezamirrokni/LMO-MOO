@@ -1,9 +1,3 @@
-"""Focused, validation-only late-LR search; preserves the 100-epoch budget.
-
-Four candidates, three seeds each. The incumbent's existing completed
-validation histories are audited and reused; baseline/test scores are not read.
-The final method, geometry, alpha and eta stay fixed.
-"""
 import argparse
 import hashlib
 import json
@@ -14,9 +8,11 @@ import statistics
 import subprocess
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from experiments.multimnist.trainer import parser, run_signature, data_fingerprint, write_json
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 SEEDS = [42, 43, 44]
 
 
@@ -41,7 +37,7 @@ def validation_record(folder, expected):
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
+    p = argparse.ArgumentParser(description="Focused, validation-only late-LR search; preserves the 100-epoch budget.\n\nFour candidates, three seeds each. The incumbent's existing completed\nvalidation histories are audited and reused; baseline/test scores are not read.\nThe final method, geometry, alpha and eta stay fixed.\n")
     p.add_argument('--data-path', type=Path, required=True)
     p.add_argument('--previous-search', type=Path, required=True)
     p.add_argument('--output-root', type=Path, required=True)
@@ -85,7 +81,6 @@ def main():
         incumbent=incumbent, source_sha256=digest.hexdigest(), score_window=5,
         minimum_improvement_pp=0.1,
         criterion='Mean of each seed\'s sample-weighted validation average over epochs 96-100; lower seed std breaks ties. Retain incumbent unless improvement exceeds 0.1 percentage point.')
-    # JSON normalizes tuples to lists before identity comparisons.
     protocol = json.loads(json.dumps(protocol))
     a.output_root.mkdir(parents=True, exist_ok=True)
     manifest = a.output_root/'refinement.json'
@@ -102,7 +97,7 @@ def main():
             print(f'Candidate {index}/4: {tag}, seed {seed}; validation only', flush=True)
             summary_path = folder/'summary.json'
             if not summary_path.exists() or not json.loads(summary_path.read_text()).get('completed'):
-                subprocess.run([sys.executable, '-u', str(ROOT/'run_multimnist.py'), *args],
+                subprocess.run([sys.executable, '-u', str(Path(__file__).with_name('run_multimnist.py')), *args],
                     cwd=ROOT, env=dict(os.environ, PYTHONUNBUFFERED='1'), check=True)
             rows.append(validation_record(folder, expected))
         records.append(record(tag, settings, rows))

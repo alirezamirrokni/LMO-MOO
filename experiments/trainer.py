@@ -688,8 +688,6 @@ def _svg_polyline(points, x0, y0, width, height, x_min, x_max, y_min, y_max):
 
 
 def _write_loss_svg(path, rows, dataset_name):
-    # Dependency-free SVG so loss monitoring does not depend on matplotlib being
-    # installed in the training environment.
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
         return
@@ -713,8 +711,6 @@ def _write_loss_svg(path, rows, dataset_name):
             ("Depth loss", 2, 4),
         ]
     else:
-        # Keep the automatic plot compact for NYUv2: semantic and depth here;
-        # normal loss remains available in the CSV/logs.
         panels = [
             ("Semantic loss", 1, 4),
             ("Depth loss", 2, 5),
@@ -970,7 +966,7 @@ def train(args, dataset_name):
             epoch_elapsed(),
         )
         atomic_torch_save(payload, checkpoint_path)
-    
+
     if (
         args.method == "mgda_warm"
         and not weight_method.method.initialized

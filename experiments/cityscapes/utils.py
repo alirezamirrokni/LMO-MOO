@@ -37,7 +37,6 @@ def depth_error(x_pred, x_output):
     ).item()
 
 
-
 delta_stats = [
     "mean iou",
     "pix acc",

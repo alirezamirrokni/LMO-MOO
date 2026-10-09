@@ -1,4 +1,3 @@
-"""MultiMNIST/ViT: reference MOON, six table baselines, and paper LMO-MOO."""
 import argparse
 import csv
 import hashlib
@@ -24,7 +23,7 @@ CONFIG = json.loads(Path(__file__).with_name('configs.json').read_text())
 
 
 def parser():
-    p = argparse.ArgumentParser(description=__doc__)
+    p = argparse.ArgumentParser(description='MultiMNIST/ViT: reference MOON, six table baselines, and paper LMO-MOO.')
     p.add_argument('--data-path', type=Path, default=Path('datasets/multimnist'))
     p.add_argument('--output-root', type=Path, default=Path('results/multimnist'))
     p.add_argument('--method', type=lambda x: {'entropic-lmo-mgda':'ours','entropic_lmo_mgda':'ours'}.get(x,x), choices=METHODS, default='ours')
@@ -141,7 +140,6 @@ def evaluate(model,loader,device):
 
 def data_fingerprint(root, splits=('train','test')):
     h=hashlib.sha256()
-    # Pin the labels and every referenced image, including preprocessing version.
     for split in splits:
         path=root/split/'labels.csv'; h.update(split.encode()); h.update(path.read_bytes())
         for row in csv.reader(path.open()):
@@ -183,7 +181,6 @@ def run_signature(args, fingerprint):
     signature = {k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items() if k not in ignored}
     if args.lr_schedule != 'late-cosine':
         signature.pop('cooldown_start', None)
-    # Preserve exact v2 signatures for the unchanged reference schedule.
     if args.lr_schedule == 'reference':
         signature.pop('lr_schedule', None)
         signature.pop('min_lr_ratio', None)
@@ -196,8 +193,6 @@ def make_scheduler(optimizer, args):
         return torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
     if args.lr_schedule == 'cosine':
         return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr*args.min_lr_ratio)
-    # The first cooldown_start training epochs retain the original learning rate.
-    # The final training epoch uses exactly min_lr_ratio times the initial LR.
     def factor(epoch_index):
         progress = min(1.0, max(0.0, (epoch_index-args.cooldown_start+1)/(args.epochs-args.cooldown_start)))
         return args.min_lr_ratio + (1-args.min_lr_ratio)*0.5*(1+math.cos(math.pi*progress))
@@ -227,14 +222,12 @@ def run(args):
         if args.cache_data:
             full_train=CachedDataset(full_train)
         if args.selection == 'validation':
-            # A private generator makes the split independent of model/train RNG.
             order=torch.randperm(len(full_train), generator=torch.Generator().manual_seed(args.split_seed))
             n_val=int(len(full_train)*args.val_fraction)
             if n_val < 1 or n_val >= len(full_train):
                 raise ValueError('Validation split must leave nonempty train and validation sets')
             test_set=Subset(full_train, order[:n_val].tolist())
             train_set=Subset(full_train, order[n_val:].tolist())
-            # Do not open test labels or images during hyperparameter selection.
             fingerprint=data_fingerprint(args.data_path, splits=('train',))
         else:
             train_set=full_train
@@ -243,7 +236,6 @@ def run(args):
                 test_set=CachedDataset(test_set)
             fingerprint=data_fingerprint(args.data_path)
         print(f'Data ready: train={len(train_set)}, {args.selection}={len(test_set)}, cache={args.cache_data}', flush=True)
-    # Same loader construction/RNG consumption as upstream. Restore global RNG at epoch boundaries.
     train_loader=DataLoader(train_set,batch_size=args.batch_size,shuffle=True,num_workers=args.workers)
     test_loader=DataLoader(test_set,batch_size=args.batch_size,shuffle=False,num_workers=args.workers)
     if args.selection == 'validation' and args.tag == 'main':
@@ -277,7 +269,6 @@ def run(args):
             train_cost+=np.array(train_step(model,method,optimizer,batch,args.method))/len(train_loader)
         scheduler.step()
         upstream,sample=evaluate(model,test_loader,device)
-        # Fixed training-only diagnostic at the FINAL model; does not update buffers or weights.
         gap=support=None
         if args.method=='ours':
             probe=torch.utils.data.default_collate([train_set[i] for i in range(min(256,len(train_set)))])

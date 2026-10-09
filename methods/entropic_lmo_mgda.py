@@ -13,17 +13,6 @@ _EPS = 1.0e-12
 
 
 def _positive_block_oracle(gradient, ns_steps=5):
-    """Return the positive duality-map / polar direction for one parameter block.
-
-    Matrix and convolutional tensors follow the MOON/Muon convention: flatten all
-    dimensions except the output dimension, compute the Newton--Schulz polar
-    factor, then reshape back. No width/kernel scaling is applied: the outer
-    learning rate controls the step magnitude.
-
-    0D/1D tensors use the Euclidean unit-ball LMO for a well-defined product
-    geometry on BatchNorm/bias parameters. This is deliberately much milder than
-    the legacy BiasRMS block scaling.
-    """
     if not torch.isfinite(gradient).all():
         raise FloatingPointError("orthogonal LMO received non-finite gradient")
 
@@ -43,13 +32,6 @@ def _positive_block_oracle(gradient, ns_steps=5):
 
 
 def _flatten_block_directions(buffer, parameters, ns_steps):
-    """Product-geometry direction with layerwise matrix polar blocks.
-
-    All 0D/1D parameters are treated as *one* Euclidean block instead of one
-    radius per bias/BatchNorm tensor. This keeps the tiny non-matrix parameter
-    fraction from receiving a disproportionate update budget while preserving a
-    genuine norm-constrained LMO for the full parameter vector.
-    """
     positive_flat = torch.zeros_like(buffer)
     direction_sq = torch.zeros((), dtype=torch.float64, device=buffer.device)
     matrix_sq = torch.zeros_like(direction_sq)
@@ -93,15 +75,7 @@ def _flatten_block_directions(buffer, parameters, ns_steps):
     return positive_flat, direction_sq, matrix_sq, vector_sq
 
 
-
 class EntropicLMOMGDA:
-    """Entropic LMO-MGDA with a single blended gradient buffer.
-
-    Persistent state is one blended gradient buffer, not one buffer per task.
-    The model update is written into ``parameter.grad`` as a *positive* polar
-    direction because the trainer uses SGD: x <- x - lr * grad. Equivalently,
-    with D = LMO(M) = -polar(M), this is x <- x + lr * D.
-    """
 
     method_name = "entropic_lmo_mgda"
     log_prefix = "ENTROPIC-LMO-MGDA"
@@ -237,8 +211,6 @@ class EntropicLMOMGDA:
             dim=0,
         )
 
-        # Draft Algorithm 2: D_t = lmo(M_{t-1}), then use current scores,
-        # then M_t <- (1-alpha_t)M_{t-1}+alpha_t Ghat_t.
         direction_buffer = self.blended_momentum
         positive_flat, direction_sq, matrix_sq, vector_sq = _flatten_block_directions(
             direction_buffer, parameters, self.ns_steps
@@ -337,4 +309,3 @@ class EntropicLMOMGDA:
         self.blended_momentum = None if momentum is None else momentum.to(self.device)
         saved_numels = state.get("parameter_numels")
         self.parameter_numels = None if saved_numels is None else tuple(saved_numels)
-

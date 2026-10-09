@@ -265,7 +265,6 @@ def run_one(cli, method, main_task=0, result_name=None):
         raise ValueError("--print-every-batches must be at least 1")
 
 
-
     if method in {"entropic_lmo_mgda", "moon"}:
         if not np.isfinite(cli.method_params_lr) or cli.method_params_lr <= 0.0:
             raise ValueError("--method-params-lr must be finite and positive")

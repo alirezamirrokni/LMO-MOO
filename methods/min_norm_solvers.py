@@ -2,11 +2,6 @@ import numpy as np
 import torch
 
 
-
-
-
-
-
 class MinNormSolver:
     MAX_ITER = 250
     STOP_CRIT = 1e-5
@@ -97,7 +92,6 @@ class MinNormSolver:
     @staticmethod
     def find_min_norm_element(vecs):
 
-
         dps = {}
         init_sol, dps = MinNormSolver._min_norm_2d(vecs, dps)
 
@@ -138,7 +132,6 @@ class MinNormSolver:
 
     @staticmethod
     def find_min_norm_element_FW(vecs):
-
 
         dps = {}
         init_sol, dps = MinNormSolver._min_norm_2d(vecs, dps)

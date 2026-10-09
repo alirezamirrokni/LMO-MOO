@@ -59,7 +59,6 @@ def normal_error(x_pred, x_output):
     )
 
 
-
 delta_stats = [
     "mean iou",
     "pix acc",

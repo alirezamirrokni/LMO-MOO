@@ -95,7 +95,6 @@ class WeightMethod:
 
 class FAMO(WeightMethod):
 
-
     def __init__(
         self,
         n_tasks: int,
@@ -238,7 +237,6 @@ class NashMTL(WeightMethod):
         **kwargs,
     ):
 
-
         extra_outputs = dict()
         if self.step == 0:
             self._init_optim_problem()
@@ -280,7 +278,6 @@ class NashMTL(WeightMethod):
 
 class LinearScalarization(WeightMethod):
 
-
     def __init__(
         self,
         n_tasks: int,
@@ -302,7 +299,6 @@ class LinearScalarization(WeightMethod):
 
 class ScaleInvariantLinearScalarization(WeightMethod):
 
-
     def __init__(
         self,
         n_tasks: int,
@@ -323,7 +319,6 @@ class ScaleInvariantLinearScalarization(WeightMethod):
 
 
 class MGDA(WeightMethod):
-
 
     def __init__(
         self, n_tasks, device: torch.device, params="shared", normalization="none"
@@ -355,7 +350,6 @@ class MGDA(WeightMethod):
         representation=None,
         **kwargs,
     ):
-
 
         grads = {}
         params = dict(
@@ -389,7 +383,6 @@ class MGDA(WeightMethod):
 
 class STL(WeightMethod):
 
-
     def __init__(self, n_tasks, device: torch.device, main_task):
         super().__init__(n_tasks, device=device)
         self.main_task = main_task
@@ -404,7 +397,6 @@ class STL(WeightMethod):
 
 
 class Uncertainty(WeightMethod):
-
 
     def __init__(self, n_tasks, device: torch.device):
         super().__init__(n_tasks, device=device)
@@ -427,7 +419,6 @@ class Uncertainty(WeightMethod):
 
 
 class PCGrad(WeightMethod):
-
 
     def __init__(self, n_tasks: int, device: torch.device, reduction="sum"):
         super().__init__(n_tasks, device=device)
@@ -526,7 +517,6 @@ class CAGrad(WeightMethod):
         shared_parameters,
         **kwargs,
     ):
-
 
         grad_dims = []
         for param in shared_parameters:
@@ -640,7 +630,6 @@ class GradDrop(WeightMethod):
         **kwargs,
     ):
 
-
         grad_dims = []
         for param in shared_parameters:
             grad_dims.append(param.data.numel())
@@ -711,7 +700,6 @@ class GradDrop(WeightMethod):
 
 class RLW(WeightMethod):
 
-
     def __init__(self, n_tasks, device: torch.device):
         super().__init__(n_tasks, device=device)
 
@@ -724,7 +712,6 @@ class RLW(WeightMethod):
 
 
 class DynamicWeightAverage(WeightMethod):
-
 
     def __init__(
         self, n_tasks, device: torch.device, iteration_window: int = 25, temp=2.0

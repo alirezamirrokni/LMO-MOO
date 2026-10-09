@@ -1,18 +1,14 @@
-"""Resume-safe model-LR/momentum selection using only a held-out part of TRAIN data.
-
-Screen a declared grid at epoch 40, continue the top two to epoch 100, and
-select by final sample-weighted validation accuracy. All trials and settings
-are retained. Final test experiments must start fresh on the full training set.
-"""
 import argparse
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from experiments.multimnist.trainer import data_fingerprint, write_json
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 CONFIG = json.loads((ROOT / 'experiments/multimnist/configs.json').read_text())
 
 
@@ -22,7 +18,7 @@ def tag_for(lr, alpha):
 
 def main():
     defaults = CONFIG['tuning']
-    p = argparse.ArgumentParser(description=__doc__)
+    p = argparse.ArgumentParser(description='Resume-safe model-LR/momentum selection using only a held-out part of TRAIN data.\n\nScreen a declared grid at epoch 40, continue the top two to epoch 100, and\nselect by final sample-weighted validation accuracy. All trials and settings\nare retained. Final test experiments must start fresh on the full training set.\n')
     p.add_argument('--data-path', type=Path, default=ROOT / 'datasets/multimnist')
     p.add_argument('--output-root', type=Path, default=ROOT / 'results/multimnist_tuning')
     p.add_argument('--lr-grid', nargs='+', type=float, default=defaults['lr_grid'])
@@ -61,7 +57,7 @@ def main():
     env = dict(os.environ, PYTHONUNBUFFERED='1')
 
     def run(lr, alpha, stop):
-        cmd = [sys.executable, '-u', str(ROOT / 'run_multimnist.py'), '--method', 'ours',
+        cmd = [sys.executable, '-u', str(Path(__file__).with_name('run_multimnist.py')), '--method', 'ours',
                '--seed', str(a.seed), '--lr', str(lr), '--eta', str(a.eta), '--alpha', str(alpha),
                '--selection', 'validation', '--metric', 'sample', '--split-seed', str(a.split_seed),
                '--val-fraction', str(a.val_fraction), '--epochs', str(a.epochs),
@@ -90,7 +86,6 @@ def main():
         print(f'\nScreen {i}/{len(candidates)}: lr={lr:g}, alpha={alpha:g}', flush=True)
         run(lr, alpha, a.screen_epochs)
         screen.append(read_row(lr, alpha, a.screen_epochs))
-    # Stable ties favor smaller LR, then smaller momentum injection.
     shortlisted = sorted(screen, key=lambda x: (-x['avg'], x['lr'], x['alpha']))[:a.finalists]
     final = []
     for i, row in enumerate(shortlisted, 1):

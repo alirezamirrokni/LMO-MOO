@@ -7,7 +7,6 @@ import torch.nn.functional as F
 
 class _SegNet(nn.Module):
 
-
     def __init__(self):
         super(_SegNet, self).__init__()
 
@@ -289,8 +288,6 @@ class SegNetMtan(nn.Module):
         return (p for n, p in self.segnet.named_parameters() if "pred" not in n)
 
 
-
-
     def task_specific_parameters(self) -> Iterator[nn.parameter.Parameter]:
         return (p for n, p in self.segnet.named_parameters() if "pred" in n)
 
@@ -461,7 +458,6 @@ class SegNet(nn.Module):
 
     def shared_parameters(self) -> Iterator[nn.parameter.Parameter]:
         return (p for n, p in self.segnet.named_parameters() if "pred" not in n)
-
 
 
     def task_specific_parameters(self) -> Iterator[nn.parameter.Parameter]:

@@ -1,9 +1,3 @@
-"""Adapter for the released MOON code, NOT a transcription of Algorithm 1.
-
-The optimizer is byte-identical upstream code. Weight classes are extracted
-verbatim. Scores use the *previous* optimizer update including auxiliary Adam
-blocks, excluding LR and decoupled weight decay, exactly as upstream trainers.
-"""
 import torch
 from methods.moon_reference_weights import MOON
 from methods.moon_muon import SingleDeviceMuonWithAuxAdam
@@ -47,7 +41,6 @@ def make_reference_optimizer(model, dataset, lr):
 
 def previous_update_scores(losses, parameters, optimizer):
     params = [p for p in parameters if p.requires_grad]
-    # Match upstream task-gradient and accumulation ordering, including step zero.
     gradients = [torch.autograd.grad(loss, params, retain_graph=True,
                   create_graph=False, allow_unused=True) for loss in losses]
     delta = torch.zeros(len(losses), device=losses.device, dtype=losses.dtype)

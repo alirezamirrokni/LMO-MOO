@@ -1,4 +1,3 @@
-"""Aggregate completed 3-seed runs and generate CSV + the paper's LaTeX table."""
 import argparse
 import csv
 import json
@@ -39,7 +38,7 @@ def fmt(x,key): return '--' if x is None or x.get(key) is None else f'{x[key]:.2
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__)
+    p=argparse.ArgumentParser(description="Aggregate completed 3-seed runs and generate CSV + the paper's LaTeX table.")
     p.add_argument('--root',type=Path,default=Path('results/multimnist'))
     p.add_argument('--ours-root',type=Path,help='Separate root for new Ours runs; baselines are read from --root without copying.')
     p.add_argument('--section',choices=['all','comparison','ablations'],default='all')
@@ -58,7 +57,6 @@ def main():
         for value,_ in variants:
             tag=f'{name}-{value}'; ablations[tag]=aggregate(ours_root,tag,'ours',a.seeds)
             if ablations[tag]: entries.append(ablations[tag])
-    # One comparison must use the same underlying generated data and metric convention.
     if len({(x['data_sha256'],x['metric']) for x in entries})>1:
         raise ValueError('Different datasets or metric conventions in one table')
     a.out.mkdir(parents=True,exist_ok=True)

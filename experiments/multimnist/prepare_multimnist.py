@@ -1,13 +1,11 @@
-"""Generate two-digit data with the source linked by MOON, or import its release.
-
-The paper does not identify its generated dataset/seed/hash. Newly generated
-images follow the linked source, but are NOT claimed identical to paper data.
-"""
 import argparse
 import csv
 import hashlib
 import json
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import random
 import shutil
 import numpy as np
@@ -20,7 +18,7 @@ def reference_merge():
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__)
+    p=argparse.ArgumentParser(description='Generate two-digit data with the source linked by MOON, or import its release.\n\nThe paper does not identify its generated dataset/seed/hash. Newly generated\nimages follow the linked source, but are NOT claimed identical to paper data.\n')
     p.add_argument('--output',type=Path,default=Path('datasets/multimnist'))
     p.add_argument('--from-directory',type=Path,help='Import upstream generated release; retain only two-digit CSV rows')
     p.add_argument('--mnist-root',type=Path,default=Path('datasets/mnist'))

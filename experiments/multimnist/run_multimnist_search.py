@@ -1,8 +1,3 @@
-"""Staged Ours-only search: training-split validation, then three-seed confirmation.
-
-Never reads test data or baseline scores. Existing reference-schedule validation
-checkpoints can be reused. No tuning checkpoint is used for final test training.
-"""
 import argparse
 import hashlib
 import itertools
@@ -15,7 +10,9 @@ import statistics
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+ROOT = Path(__file__).resolve().parents[2]
 LR_GRID = [0.001, 0.003, 0.006, 0.01, 0.015, 0.022, 0.03, 0.045]
 ALPHA_GRID = [0.02, 0.05, 0.1, 0.2, 0.5, 0.8]
 ETA_GRID = [1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 3e-3, 1e-2]
@@ -44,7 +41,7 @@ def ranking(rows):
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
+    p = argparse.ArgumentParser(description='Staged Ours-only search: training-split validation, then three-seed confirmation.\n\nNever reads test data or baseline scores. Existing reference-schedule validation\ncheckpoints can be reused. No tuning checkpoint is used for final test training.\n')
     p.add_argument('--data-path', type=Path, required=True)
     p.add_argument('--output-root', type=Path, required=True)
     p.add_argument('--incumbent-selection', type=Path, required=True)
@@ -71,7 +68,6 @@ def main():
         raise ValueError('Incumbent used different training images')
     split_seed = previous['settings'].get('split_seed', 2026)
     val_fraction = previous['settings'].get('val_fraction', 0.1)
-    # Freeze source code and the full search before starting. No adaptive test-score input.
     code_hash = hashlib.sha256()
     for file in [Path(__file__), *sorted((ROOT/'experiments/multimnist').glob('*.py')),
                  *sorted((ROOT/'methods').glob('*.py'))]:
@@ -120,7 +116,7 @@ def main():
                 raise ValueError(f'Validation checkpoint mismatch: {folder/name}')
         rows = json.loads((folder/'history.json').read_text()) if (folder/'history.json').exists() else []
         if not any(r['epoch'] == stop for r in rows):
-            command = [sys.executable,'-u',str(ROOT/'run_multimnist.py'),*args]
+            command = [sys.executable,'-u',str(Path(__file__).with_name('run_multimnist.py')),*args]
             print(f'\nTraining {tag_for(c)}, seed={seed}, through epoch {stop}', flush=True)
             subprocess.run(command, cwd=ROOT, env=env, check=True)
             rows = json.loads((folder/'history.json').read_text())
@@ -142,7 +138,6 @@ def main():
         return records
 
     def shortlist(rows, count):
-        # Keep the old configuration through every stage as an explicit control.
         return unique([r['config'] for r in ranking(rows)[:count]] + [incumbent])
 
     initial = unique([candidate(lr,alpha,eta=incumbent['eta'],lr_schedule=schedule)

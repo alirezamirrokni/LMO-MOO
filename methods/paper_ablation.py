@@ -1,4 +1,3 @@
-"""Controlled ablations of the supplied EntropicLMOMGDA implementation."""
 import torch
 from methods.entropic_lmo_mgda import EntropicLMOMGDA, _flatten_block_directions
 from methods.lmo_utils import _task_gradient_matrix, _unique_parameters
@@ -19,7 +18,6 @@ def positive_oracle(buffer, parameters, geometry='spectral', ns_steps=5, exact=F
         return buffer.sign()
     if not exact:
         return _flatten_block_directions(buffer, parameters, ns_steps)[0]
-    # Exact product-ball oracle for gap measurement, not the finite-NS surrogate.
     result = torch.zeros_like(buffer)
     vector_indices = []
     start = 0
@@ -29,7 +27,6 @@ def positive_oracle(buffer, parameters, geometry='spectral', ns_steps=5, exact=F
             g = buffer[start:end].reshape(p.shape[0], -1)
             if torch.count_nonzero(g):
                 u, s, vh = torch.linalg.svd(g, full_matrices=False)
-                # Zero singular subspaces may be assigned zero (valid LMO).
                 keep = (s > torch.finfo(s.dtype).eps * max(g.shape) * s.max()).to(s.dtype)
                 result[start:end] = ((u*keep) @ vh).reshape(-1)
         else:
@@ -97,12 +94,6 @@ class PaperAblation(EntropicLMOMGDA):
         self.task_momentum = None if state['task_momentum'] is None else state['task_momentum'].to(self.device)
 
     def inner_gap(self, losses, parameters):
-        """Simplex FW gap of h(w)=||sum_i w_i grad f_i||_* on a fixed probe.
-
-        gap=<G_w,P(G_w)>-min_i <g_i,P(G_w)>; exact polar P for spectral.
-        This is a minibatch inner optimization diagnostic, not an accuracy gap
-        and not a claim of full-dataset Pareto stationarity.
-        """
         params = _unique_parameters(parameters)
         gradients = _task_gradient_matrix(losses, params, False).double()
         weights = self.weights.to(gradients)

@@ -2,46 +2,26 @@ import numpy as np
 import torch
 
 
-# This code is from
-# Multi-Task Learning as Multi-Objective Optimization
-# Ozan Sener, Vladlen Koltun
-# Neural Information Processing Systems (NeurIPS) 2018
-# https://github.com/intel-isl/MultiObjectiveOptimization
 class MinNormSolver:
     MAX_ITER = 250
     STOP_CRIT = 1e-5
 
     @staticmethod
     def _min_norm_element_from2(v1v1, v1v2, v2v2):
-        r"""
-        Analytical solution for min_{c} |cx_1 + (1-c)x_2|_2^2
-        d is the distance (objective) optimzed
-        v1v1 = <x1,x1>
-        v1v2 = <x1,x2>
-        v2v2 = <x2,x2>
-        """
         if v1v2 >= v1v1:
-            # Case: Fig 1, third column
             gamma = 0.999
             cost = v1v1
             return gamma, cost
         if v1v2 >= v2v2:
-            # Case: Fig 1, first column
             gamma = 0.001
             cost = v2v2
             return gamma, cost
-        # Case: Fig 1, second column
         gamma = -1.0 * ((v1v2 - v2v2) / (v1v1 + v2v2 - 2 * v1v2))
         cost = v2v2 + gamma * (v1v2 - v2v2)
         return gamma, cost
 
     @staticmethod
     def _min_norm_2d(vecs, dps):
-        r"""
-        Find the minimum norm solution as combination of two points
-        This is correct only in 2D
-        ie. min_c |\sum c_i x_i|_2^2 st. \sum c_i = 1 , 1 >= c_1 >= 0 for all i, c_i + c_j = 1.0 for some i, j
-        """
         dmin = 1e8
         for i in range(len(vecs)):
             for j in range(i + 1, len(vecs)):
@@ -50,20 +30,20 @@ class MinNormSolver:
                     for k in range(len(vecs[i])):
                         dps[(i, j)] += torch.dot(
                             vecs[i][k], vecs[j][k]
-                        ).item()  # torch.dot(vecs[i][k], vecs[j][k]).dataset[0]
+                        ).item()
                     dps[(j, i)] = dps[(i, j)]
                 if (i, i) not in dps:
                     dps[(i, i)] = 0.0
                     for k in range(len(vecs[i])):
                         dps[(i, i)] += torch.dot(
                             vecs[i][k], vecs[i][k]
-                        ).item()  # torch.dot(vecs[i][k], vecs[i][k]).dataset[0]
+                        ).item()
                 if (j, j) not in dps:
                     dps[(j, j)] = 0.0
                     for k in range(len(vecs[i])):
                         dps[(j, j)] += torch.dot(
                             vecs[j][k], vecs[j][k]
-                        ).item()  # torch.dot(vecs[j][k], vecs[j][k]).dataset[0]
+                        ).item()
                 c, d = MinNormSolver._min_norm_element_from2(
                     dps[(i, i)], dps[(i, j)], dps[(j, j)]
                 )
@@ -74,9 +54,6 @@ class MinNormSolver:
 
     @staticmethod
     def _projection2simplex(y):
-        r"""
-        Given y, it solves argmin_z |y-z|_2 st \sum z = 1 , 1 >= z_i >= 0 for all i
-        """
         m = len(y)
         sorted_y = np.flip(np.sort(y), axis=0)
         tmpsum = 0.0
@@ -108,13 +85,6 @@ class MinNormSolver:
 
     @staticmethod
     def find_min_norm_element(vecs):
-        r"""
-        Given a list of vectors (vecs), this method finds the minimum norm element in the convex hull
-        as min |u|_2 st. u = \sum c_i vecs[i] and \sum c_i = 1.
-        It is quite geometric, and the main idea is the fact that if d_{ij} = min |u|_2 st u = c x_i + (1-c) x_j; the solution lies in (0, d_{i,j})
-        Hence, we find the best 2-task solution, and then run the projected gradient descent until convergence
-        """
-        # Solution lying at the combination of two points
         dps = {}
         init_sol, dps = MinNormSolver._min_norm_2d(vecs, dps)
 
@@ -124,7 +94,6 @@ class MinNormSolver:
         sol_vec[init_sol[0][1]] = 1 - init_sol[1]
 
         if n < 3:
-            # This is optimal for n=2, so return the solution
             return sol_vec, init_sol[2]
 
         iter_count = 0
@@ -137,7 +106,6 @@ class MinNormSolver:
         while iter_count < MinNormSolver.MAX_ITER:
             grad_dir = -1.0 * np.dot(grad_mat, sol_vec)
             new_point = MinNormSolver._next_point(sol_vec, grad_dir, n)
-            # Re-compute the inner products for line search
             v1v1 = 0.0
             v1v2 = 0.0
             v2v2 = 0.0
@@ -155,13 +123,6 @@ class MinNormSolver:
 
     @staticmethod
     def find_min_norm_element_FW(vecs):
-        r"""
-        Given a list of vectors (vecs), this method finds the minimum norm element in the convex hull
-        as min |u|_2 st. u = \sum c_i vecs[i] and \sum c_i = 1.
-        It is quite geometric, and the main idea is the fact that if d_{ij} = min |u|_2 st u = c x_i + (1-c) x_j; the solution lies in (0, d_{i,j})
-        Hence, we find the best 2-task solution, and then run the Frank Wolfe until convergence
-        """
-        # Solution lying at the combination of two points
         dps = {}
         init_sol, dps = MinNormSolver._min_norm_2d(vecs, dps)
 
@@ -171,7 +132,6 @@ class MinNormSolver:
         sol_vec[init_sol[0][1]] = 1 - init_sol[1]
 
         if n < 3:
-            # This is optimal for n=2, so return the solution
             return sol_vec, init_sol[2]
 
         iter_count = 0

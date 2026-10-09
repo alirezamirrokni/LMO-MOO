@@ -1,5 +1,3 @@
-# Classes copied verbatim from KunlinLyu/MOON commit 37319d14765595577b9b01fe91d6fcfca5ffbd7c.
-# Only imports are narrowed/namespaced. Attribution: THIRD_PARTY_NOTICES.txt.
 from abc import abstractmethod
 from typing import List, Tuple, Union
 import numpy as np
@@ -44,21 +42,6 @@ class WeightMethod:
         representation: Union[List[torch.nn.parameter.Parameter], torch.Tensor] = None,
         **kwargs,
     ) -> Tuple[Union[torch.Tensor, None], Union[dict, None]]:
-        """
-
-        Parameters
-        ----------
-        losses :
-        shared_parameters :
-        task_specific_parameters :
-        last_shared_parameters : parameters of last shared layer/block
-        representation : shared representation
-        kwargs :
-
-        Returns
-        -------
-        Loss, extra outputs
-        """
         loss, extra_outputs = self.get_weighted_loss(
             losses=losses,
             shared_parameters=shared_parameters,
@@ -93,11 +76,9 @@ class WeightMethod:
         )
 
     def parameters(self) -> List[torch.Tensor]:
-        """return learnable parameters"""
         return []
 
 class FAMO(WeightMethod):
-    """Linear scalarization baseline L = sum_j w_j * l_j where l_j is the loss for task j and w_h"""
 
     def __init__(
         self,
@@ -113,7 +94,7 @@ class FAMO(WeightMethod):
         self.w = torch.tensor([0.0] * n_tasks, device=device, requires_grad=True)
         self.w_opt = torch.optim.Adam([self.w], lr=w_lr, weight_decay=gamma)
         self.max_norm = max_norm
-    
+
     def set_min_losses(self, losses):
         self.min_losses = losses
 
@@ -152,7 +133,7 @@ class MOON(WeightMethod):
         self.w = torch.tensor([0.0] * n_tasks, device=device, requires_grad=True)
         self.w_opt = torch.optim.Adam([self.w], lr=w_lr, weight_decay=gamma)
         self.max_norm = max_norm
-    
+
     def set_min_losses(self, losses):
         self.min_losses = losses
 
@@ -167,7 +148,6 @@ class MOON(WeightMethod):
         self.w_opt.step()
 
 class LinearScalarization(WeightMethod):
-    """Linear scalarization baseline L = sum_j w_j * l_j where l_j is the loss for task j and w_h"""
 
     def __init__(
         self,
@@ -188,12 +168,6 @@ class LinearScalarization(WeightMethod):
         return loss, dict(weights=self.task_weights)
 
 class MGDA(WeightMethod):
-    """Based on the official implementation of: Multi-Task Learning as Multi-Objective Optimization
-    Ozan Sener, Vladlen Koltun
-    Neural Information Processing Systems (NeurIPS) 2018
-    https://github.com/intel-isl/MultiObjectiveOptimization
-
-    """
 
     def __init__(
         self, n_tasks, device: torch.device, params="shared", normalization="none"
@@ -225,21 +199,6 @@ class MGDA(WeightMethod):
         representation=None,
         **kwargs,
     ):
-        """
-
-        Parameters
-        ----------
-        losses :
-        shared_parameters :
-        last_shared_parameters :
-        representation :
-        kwargs :
-
-        Returns
-        -------
-
-        """
-        # Our code
         grads = {}
         params = dict(
             rep=representation, shared=shared_parameters, last=last_shared_parameters
@@ -252,7 +211,6 @@ class MGDA(WeightMethod):
                     retain_graph=True,
                 )
             )
-            # Normalize all gradients, this is optional and not included in the paper.
 
             grads[i] = [torch.flatten(grad) for grad in g]
 
@@ -264,7 +222,7 @@ class MGDA(WeightMethod):
         sol, min_norm = self.solver.find_min_norm_element(
             [grads[t] for t in range(len(grads))]
         )
-        sol = sol * self.n_tasks  # make sure it sums to self.n_tasks
+        sol = sol * self.n_tasks
         weighted_loss = sum([losses[i] * sol[i] for i in range(len(sol))])
 
         return weighted_loss, dict(weights=torch.from_numpy(sol.astype(np.float32)))

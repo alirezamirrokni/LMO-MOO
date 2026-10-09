@@ -1,4 +1,3 @@
-# experiments/multimnist/data.py
 import os
 import csv
 from typing import List, Tuple
@@ -11,30 +10,16 @@ from torchvision import transforms
 
 
 class MultiMNISTDataset(Dataset):
-    """
-    root/
-      train/
-        2/
-          *.png
-        labels.csv
-      test/
-        2/
-          *.png
-        labels.csv
-
-    labels.csv: "0.png,21" -> 左=2, 右=1
-    """
 
     def __init__(self, root: str, split: str = "train", transform=None):
         assert split in ("train", "test")
         self.root = root
         self.split = split
-        
+
         if transform is None:
-            # 统一所有图片到 28x43，再转成 [1, 28, 43] 的 tensor
             self.transform = transforms.Compose(
                 [
-                    transforms.Resize((28, 43)),  # (height, width)
+                    transforms.Resize((28, 43)),
                     transforms.ToTensor(),
                 ]
             )
@@ -43,7 +28,7 @@ class MultiMNISTDataset(Dataset):
 
         split_dir = os.path.join(root, split)
         csv_path = os.path.join(split_dir, "labels.csv")
-        img_dir = os.path.join(split_dir, "2")  # 目前就用 2 这个子目录
+        img_dir = os.path.join(split_dir, "2")
 
         if not os.path.isdir(img_dir):
             raise FileNotFoundError(f"Image directory not found: {img_dir}")
@@ -60,7 +45,6 @@ class MultiMNISTDataset(Dataset):
                     continue
                 img_name = row[0].strip()
                 label_str = row[1].strip()
-                # 假设就是两个数字，例如 "21"
                 if len(label_str) != 2:
                     raise ValueError(f"Label '{label_str}' is not 2 digits.")
                 left_digit = int(label_str[0])
@@ -84,11 +68,10 @@ class MultiMNISTDataset(Dataset):
         if not os.path.isfile(img_path):
             raise FileNotFoundError(f"Image file not found: {img_path}")
 
-        img = Image.open(img_path).convert("L")  # 灰度
+        img = Image.open(img_path).convert("L")
         if self.transform is not None:
-            img = self.transform(img)  # -> [1, 28, 43] float32
+            img = self.transform(img)
 
-        # label 保持为 python int，DataLoader 默认会拼成 LongTensor
         return img, left_digit, right_digit
 
 
@@ -120,11 +103,6 @@ def get_dataloaders(
 
 
 class CachedDataset(Dataset):
-    """Materialize the existing deterministic transform without RNG changes.
-
-    Used only with MultiMNISTDataset's default Resize + ToTensor pipeline.
-    The default 10k dataset uses about 46 MiB of image storage in RAM.
-    """
     def __init__(self, dataset):
         print(f'Caching {len(dataset)} preprocessed images in host RAM...', flush=True)
         rows = [dataset[i] for i in range(len(dataset))]

@@ -1,15 +1,8 @@
-# Source: vndee/multi-mnist, commit 8aec5b51c266f01fc855949330e7e58e84b6b09c
-# See THIRD_PARTY_NOTICES.txt. Functions retained unchanged.
 import random
 import numpy as np
 overlap_size = 30
 
 def remove_zero_padding(arr):
-    """
-    Remove all zero padding in the left and right bounding of arr
-    :param arr: image as numpy array
-    :return: image as numpy array
-    """
 
     left_bounding = 0
     right_bounding = 0
@@ -39,14 +32,6 @@ def remove_zero_padding(arr):
     return arr[:, left_bounding:right_bounding]
 
 def concat(a, b, overlap=True, intersection_scalar=0.2):
-    """
-    Concatenate 2 numpy array
-    :param a: numpy array
-    :param b: numpy array
-    :param overlap: decide 2 array are overlap or not
-    :param intersection_scalar: percentage of overlap size
-    :return: numpy array
-    """
 
     assert a.shape[0] == b.shape[0]
 
@@ -71,12 +56,6 @@ def concat(a, b, overlap=True, intersection_scalar=0.2):
     return im
 
 def merge(list_file, overlap_prob=True):
-    """
-    Merge all images in list_file into 1 file
-    :param list_file: list of images as numpy array
-    :param overlap_prob: decide merged images is overlap or not
-    :return: void
-    """
 
     im = np.zeros((28, 1))
 

@@ -14,7 +14,6 @@ from torch.utils.data.dataset import Dataset
 
 class RandomScaleCrop(object):
 
-
     def __init__(self, scale=[1.0, 1.2, 1.5]):
         self.scale = scale
 
@@ -52,7 +51,6 @@ class RandomScaleCrop(object):
 
 
 class NYUv2(Dataset):
-
 
     def __init__(self, root, train=True, augmentation=False):
         self.train = train
