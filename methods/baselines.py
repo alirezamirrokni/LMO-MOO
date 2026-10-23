@@ -1,18 +1,14 @@
 import copy
 import random
 from abc import abstractmethod
-from typing import Dict, List, Tuple, Union
+from typing import List, Tuple, Union
 
-try:
-    import cvxpy as cp
-except ImportError:
-    cp = None
+import cvxpy as cp
 import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.optimize import minimize
 
-from methods.advanced_methods import MGDAWarm, MoCo, MoDo
 from methods.min_norm_solvers import MinNormSolver, gradient_normalizers
 
 EPS = 1e-8
@@ -89,7 +85,6 @@ class WeightMethod:
         )
 
     def parameters(self) -> List[torch.Tensor]:
-
         return []
 
 
@@ -146,12 +141,6 @@ class NashMTL(WeightMethod):
             n_tasks=n_tasks,
             device=device,
         )
-
-        if cp is None:
-            raise ImportError(
-                "NashMTL requires the optional cvxpy dependency. "
-                "Install cvxpy to use --method nashmtl."
-            )
 
         self.optim_niter = optim_niter
         self.update_weights_every = update_weights_every
@@ -364,7 +353,6 @@ class MGDA(WeightMethod):
                 )
             )
 
-
             grads[i] = [torch.flatten(grad) for grad in g]
 
         gn = gradient_normalizers(grads, losses, self.normalization)
@@ -439,7 +427,6 @@ class PCGrad(WeightMethod):
         raise NotImplementedError
 
     def _set_pc_grads(self, losses, shared_parameters, task_specific_parameters=None):
-
         shared_grads = []
         for l in losses:
             shared_grads.append(
@@ -451,7 +438,6 @@ class PCGrad(WeightMethod):
         non_conflict_shared_grads = self._project_conflicting(shared_grads)
         for p, g in zip(shared_parameters, non_conflict_shared_grads):
             p.grad = g
-
 
         if task_specific_parameters is not None:
             task_specific_grads = torch.autograd.grad(
@@ -574,10 +560,8 @@ class CAGrad(WeightMethod):
 
     @staticmethod
     def grad2vec(shared_params, grads, grad_dims, task):
-
         grads[:, task].fill_(0.0)
         cnt = 0
-
 
         for param in shared_params:
             grad = param.grad
@@ -591,7 +575,6 @@ class CAGrad(WeightMethod):
     def overwrite_grad(self, shared_parameters, newgrad, grad_dims):
         newgrad = newgrad * self.n_tasks
         cnt = 0
-
 
         for param in shared_parameters:
             beg = 0 if cnt == 0 else sum(grad_dims[:cnt])
@@ -653,10 +636,8 @@ class GradDrop(WeightMethod):
 
     @staticmethod
     def grad2vec(shared_params, grads, grad_dims, task):
-
         grads[:, task].fill_(0.0)
         cnt = 0
-
 
         for param in shared_params:
             grad = param.grad
@@ -670,7 +651,6 @@ class GradDrop(WeightMethod):
     def overwrite_grad(self, shared_parameters, newgrad, grad_dims):
         newgrad = newgrad * self.n_tasks
         cnt = 0
-
 
         for param in shared_parameters:
             beg = 0 if cnt == 0 else sum(grad_dims[:cnt])
@@ -725,9 +705,7 @@ class DynamicWeightAverage(WeightMethod):
         self.weights = np.ones(n_tasks, dtype=np.float32)
 
     def get_weighted_loss(self, losses, **kwargs):
-
         cost = losses.detach().cpu().numpy()
-
 
         self.costs[:-1, :] = self.costs[1:, :]
         self.costs[-1, :] = cost
@@ -750,105 +728,32 @@ class DynamicWeightAverage(WeightMethod):
         return loss, dict(weights=task_weights)
 
 
-class WeightMethods:
-    def __init__(self, method: str, n_tasks: int, device: torch.device, **kwargs):
+class MOON(WeightMethod):
 
-        assert method in list(METHODS.keys()), f"unknown method {method}."
+    def __init__(
+        self,
+        n_tasks: int,
+        device: torch.device,
+        gamma: float = 1e-5,
+        w_lr: float = 1e-4,
+        task_weights: Union[List[float], torch.Tensor] = None,
+        max_norm: float = 1.0,
+    ):
+        super().__init__(n_tasks, device=device)
+        self.min_losses = torch.zeros(n_tasks).to(device)
+        self.w = torch.tensor([0.0] * n_tasks, device=device, requires_grad=True)
+        self.w_opt = torch.optim.Adam([self.w], lr=w_lr, weight_decay=gamma)
+        self.max_norm = max_norm
 
-        self.name = method
-        self.method = METHODS[method](n_tasks=n_tasks, device=device, **kwargs)
+    def set_min_losses(self, losses):
+        self.min_losses = losses
 
     def get_weighted_loss(self, losses, **kwargs):
-        return self.method.get_weighted_loss(losses, **kwargs)
+        z = F.softmax(self.w, -1)
+        loss = (z * losses).sum()
+        return loss, {"weights": z, "logits": self.w.detach().clone()}
 
-    def backward(
-        self, losses, **kwargs
-    ) -> Tuple[Union[torch.Tensor, None], Union[Dict, None]]:
-        return self.method.backward(losses, **kwargs)
-
-    def __ceil__(self, losses, **kwargs):
-        return self.backward(losses, **kwargs)
-
-    def parameters(self):
-        return self.method.parameters()
-
-    def state_dict(self):
-        method = self.method
-        if self.name == "uw":
-            return {"logsigma": method.logsigma.detach().cpu()}
-        if self.name == "dwa":
-            return {
-                "running_iterations": method.running_iterations,
-                "costs": method.costs.copy(),
-                "weights": method.weights.copy(),
-            }
-        if self.name == "famo":
-            return {
-                "min_losses": method.min_losses.detach().cpu(),
-                "w": method.w.detach().cpu(),
-                "w_opt": method.w_opt.state_dict(),
-            }
-        if self.name == "nashmtl":
-            return {
-                "step": method.step,
-                "prvs_alpha": method.prvs_alpha.copy(),
-                "normalization_factor": method.normalization_factor.copy(),
-            }
-        if self.name in {"moco", "modo", "mgda_warm", "entropic_lmo_mgda", "moon"}:
-            return method.state_dict()
-        return {}
-
-    def load_state_dict(self, state):
-        if not state:
-            return
-        method = self.method
-        if self.name == "uw":
-            with torch.no_grad():
-                method.logsigma.copy_(state["logsigma"].to(method.device))
-            return
-        if self.name == "dwa":
-            method.running_iterations = int(state["running_iterations"])
-            method.costs = np.asarray(state["costs"], dtype=np.float32).copy()
-            method.weights = np.asarray(state["weights"], dtype=np.float32).copy()
-            return
-        if self.name == "famo":
-            with torch.no_grad():
-                method.min_losses.copy_(state["min_losses"].to(method.device))
-                method.w.copy_(state["w"].to(method.device))
-            method.w_opt.load_state_dict(state["w_opt"])
-            return
-        if self.name == "nashmtl":
-            method.step = state["step"]
-            method.prvs_alpha = np.asarray(state["prvs_alpha"], dtype=np.float32).copy()
-            method.normalization_factor = np.asarray(
-                state["normalization_factor"], dtype=np.float64
-            ).copy()
-            if method.step > 0:
-                method._init_optim_problem()
-            return
-        if self.name in {"moco", "modo", "mgda_warm", "entropic_lmo_mgda", "moon"}:
-            method.load_state_dict(state)
-
-
-METHODS = dict(
-    stl=STL,
-    ls=LinearScalarization,
-    scaleinvls=ScaleInvariantLinearScalarization,
-    rlw=RLW,
-    dwa=DynamicWeightAverage,
-    uw=Uncertainty,
-    mgda=MGDA,
-    pcgrad=PCGrad,
-    graddrop=GradDrop,
-    cagrad=CAGrad,
-    moco=MoCo,
-    modo=MoDo,
-    nashmtl=NashMTL,
-    famo=FAMO,
-    mgda_warm=MGDAWarm,
-)
-
-from methods.entropic_lmo_mgda import EntropicLMOMGDA
-from methods.moon import ReferenceMOON
-
-METHODS.update({"entropic_lmo_mgda": EntropicLMOMGDA, "moon": ReferenceMOON})
+    def update(self, delta):
+        self.w_opt.zero_grad()
+        self.w.grad = delta.detach()
+        self.w_opt.step()

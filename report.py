@@ -1,329 +1,90 @@
 import argparse
+import json
 from pathlib import Path
-
-import importlib
-import sys
 
 import numpy as np
 import torch
 
-if int(np.__version__.split(".")[0]) < 2:
-    for _suffix in (
-        "",
-        ".multiarray",
-        ".numeric",
-        "._multiarray_umath",
-        ".umath",
-        ".numerictypes",
-        ".fromnumeric",
-        ".shape_base",
-        ".overrides",
-        "._asarray",
-        ".getlimits",
-        "._dtype",
-        "._internal",
-    ):
-        try:
-            _module = importlib.import_module(f"numpy.core{_suffix}")
-        except ImportError:
-            continue
-        sys.modules.setdefault(f"numpy._core{_suffix}", _module)
-
-
-ORDER = [
-    ("Entropic LMO-MGDA", "paper_lmo_moo"),
-    ("MOON (official)", "moon_reference"),
-    ("STL", "stl"),
-    ("LS", "ls"),
-    ("SI", "scaleinvls"),
-    ("RLW", "rlw"),
-    ("DWA", "dwa"),
-    ("UW", "uw"),
-    ("MGDA", "mgda"),
-    ("PCGrad", "pcgrad"),
-    ("GradDrop", "graddrop"),
-    ("CAGrad", "cagrad"),
-    ("MoCo", "moco"),
-    ("MoDo", "modo"),
-    ("Nash-MTL", "nashmtl"),
-    ("FAMO", "famo"),
-    ("MGDA-warm", "mgda_warm"),
+DENSE_METHODS = [
+    ("LS", "ls"), ("SI", "scaleinvls"), ("RLW", "rlw"), ("DWA", "dwa"), ("UW", "uw"), ("MGDA", "mgda"),
+    ("PCGrad", "pcgrad"), ("GradDrop", "graddrop"), ("CAGrad", "cagrad"), ("MoCo", "moco"), ("MoDo", "modo"),
+    ("Nash-MTL", "nashmtl"), ("FAMO", "famo"), ("MGDA (warm)", "mgda_warm"), ("MOON", "moon"),
+    ("Entropic LMO-MGDA", "entropic_lmo_mgda"),
 ]
+DENSE = {
+    "cityscapes": dict(columns=["mIoU", "Pix Acc", "Abs Err", "Rel Err"], index=[7, 8, 10, 11], percent=[1, 1, 0, 0],
+                       higher=[1, 1, 0, 0], stl_task=[0, 0, 1, 1]),
+    "nyuv2": dict(columns=["mIoU", "Pix Acc", "Abs", "Rel", "Mean", "Med.", "<11.25", "<22.5", "<30"],
+                  index=[13, 14, 16, 17, 19, 20, 21, 22, 23], percent=[1, 1, 0, 0, 0, 0, 1, 1, 1],
+                  higher=[1, 1, 0, 0, 0, 0, 1, 1, 1], stl_task=[0, 0, 1, 1, 2, 2, 2, 2, 2]),
+}
+MULTIMNIST_METHODS = [("MGDA", "mgda"), ("MGDA + Muon", "mgda_muon"), ("FAMO", "famo"), ("FAMO + Muon", "famo_muon"),
+                      ("Muon (LS)", "muon_ls"), ("MOON", "moon"), ("Entropic LMO-MGDA", "entropic_lmo_mgda")]
 
 
-def load_completed(path):
-    summary_path = (
-        path.parents[1]
-        / "summaries"
-        / path.parent.name
-        / f"{path.stem}.summary"
-    )
-    source = summary_path if summary_path.exists() else path
-    if not source.exists():
+def print_table(title, header, rows):
+    rows = [[r[0]] + ["--" if v is None else str(v) if isinstance(v, int) else f"{v:.4f}" for v in r[1:]] for r in rows]
+    widths = [max(len(str(x)) for x in col) for col in zip(header, *rows)]
+    print(f"\n{title}\n")
+    for line in [header, ["-" * w for w in widths], *rows]:
+        print("  ".join(str(x).ljust(w) for x, w in zip(line, widths)))
+
+
+def final_metrics(path, spec):
+    if not path.exists():
         return None
-
-    try:
-        try:
-            data = torch.load(source, map_location="cpu", weights_only=False)
-        except TypeError:
-            data = torch.load(source, map_location="cpu")
-    except Exception:
+    result = torch.load(path, weights_only=False)
+    if not result["completed"]:
         return None
-
-    values = np.asarray(data.get("avg_cost", []), dtype=float)
-    if values.ndim != 2 or len(values) < 10:
-        return None
-
-    if "completed" in data:
-        if not bool(data["completed"]):
-            return None
-    elif np.allclose(values[-1], 0):
-        return None
-
-    return data
+    values = np.asarray(result["avg_cost"], dtype=float)[-10:].mean(axis=0)[spec["index"]]
+    return values * np.where(spec["percent"], 100.0, 1.0)
 
 
-def last_ten(data):
-    return np.asarray(data["avg_cost"], dtype=float)[-10:].mean(axis=0)
-
-
-def delta_last_ten(data):
-    values = np.asarray(data.get("delta_m", []), dtype=float)
-    if len(values) < 10 or not np.all(np.isfinite(values[-10:])):
-        return None
-    return float(values[-10:].mean())
-
-
-def wall_hours(data):
-    value = data.get("wall_time_seconds")
-    if value is None:
-        return None
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not np.isfinite(value) or value < 0:
-        return None
-    return value / 3600.0
-
-
-def city_row(data):
-    values = last_ten(data)
-    return [
-        100 * values[7],
-        100 * values[8],
-        values[10],
-        values[11],
-        delta_last_ten(data),
-        wall_hours(data),
-    ]
-
-
-def nyu_row(data):
-    values = last_ten(data)
-    return [
-        100 * values[13],
-        100 * values[14],
-        values[16],
-        values[17],
-        values[19],
-        values[20],
-        100 * values[21],
-        100 * values[22],
-        100 * values[23],
-        delta_last_ten(data),
-        wall_hours(data),
-    ]
-
-
-def combined_wall_hours(data):
-    values = [wall_hours(item) for item in data]
-    if any(value is None for value in values):
-        return None
-    return float(sum(values))
-
-
-def city_stl(result_dir, seed):
-    paths = [
-        result_dir / f"stl_task0_sd{seed}.stats",
-        result_dir / f"stl_task1_sd{seed}.stats",
-    ]
-    data = [load_completed(path) for path in paths]
-    if any(item is None for item in data):
-        return None
-
-    segmentation = last_ten(data[0])
-    depth = last_ten(data[1])
-
-    from experiments.cityscapes.utils import delta_fn
-
-    metrics = np.array(
-        [segmentation[7], segmentation[8], depth[10], depth[11]]
-    )
-    return [
-        100 * segmentation[7],
-        100 * segmentation[8],
-        depth[10],
-        depth[11],
-        float(delta_fn(metrics)),
-        combined_wall_hours(data),
-    ]
-
-
-def nyu_stl(result_dir, seed):
-    paths = [
-        result_dir / f"stl_task0_sd{seed}.stats",
-        result_dir / f"stl_task1_sd{seed}.stats",
-        result_dir / f"stl_task2_sd{seed}.stats",
-    ]
-    data = [load_completed(path) for path in paths]
-    if any(item is None for item in data):
-        return None
-
-    segmentation = last_ten(data[0])
-    depth = last_ten(data[1])
-    normal = last_ten(data[2])
-
-    from experiments.nyuv2.utils import delta_fn
-
-    metrics = np.array(
-        [
-            segmentation[13],
-            segmentation[14],
-            depth[16],
-            depth[17],
-            normal[19],
-            normal[20],
-            normal[21],
-            normal[22],
-            normal[23],
-        ]
-    )
-    return [
-        100 * segmentation[13],
-        100 * segmentation[14],
-        depth[16],
-        depth[17],
-        normal[19],
-        normal[20],
-        100 * normal[21],
-        100 * normal[22],
-        100 * normal[23],
-        float(delta_fn(metrics)),
-        combined_wall_hours(data),
-    ]
-
-
-def format_value(value):
-    if value is None:
-        return "NA"
-    if isinstance(value, str):
-        return value
-    if not np.isfinite(value):
-        return "NA"
-    return f"{value:.4f}"
-
-
-def print_table(headers, rows):
-    text_rows = [[format_value(value) for value in row] for row in rows]
-    widths = [
-        max(len(headers[index]), *(len(row[index]) for row in text_rows))
-        for index in range(len(headers))
-    ]
-
-    print(
-        "  ".join(
-            headers[index].ljust(widths[index])
-            for index in range(len(headers))
-        )
-    )
-    print("  ".join("-" * width for width in widths))
-
-    for row in text_rows:
-        print(
-            "  ".join(
-                row[index].ljust(widths[index])
-                for index in range(len(headers))
-            )
-        )
-
-
-def collect(root, dataset, seed):
-    result_dir = root / dataset
-    width = 6 if dataset == "cityscapes" else 11
-    rows = []
-
-    for display, code in ORDER:
-        if code == "stl":
-            metrics = (
-                city_stl(result_dir, seed)
-                if dataset == "cityscapes"
-                else nyu_stl(result_dir, seed)
-            )
-        else:
-            path = result_dir / f"{code}_sd{seed}.stats"
-            data = load_completed(path)
-            if data is None:
-                metrics = None
-            else:
-                metrics = city_row(data) if dataset == "cityscapes" else nyu_row(data)
-
+def dense_table(root, dataset, seed):
+    spec = DENSE[dataset]
+    stl_tasks = [final_metrics(root / dataset / f"stl_task{t}_sd{seed}.stats", spec) for t in range(max(spec["stl_task"]) + 1)]
+    stl = None if any(x is None for x in stl_tasks) else np.array([stl_tasks[t][i] for i, t in enumerate(spec["stl_task"])])
+    rows = [["STL", *(stl if stl is not None else [None] * len(spec["index"])), 0.0 if stl is not None else None]]
+    sign = np.where(spec["higher"], -1.0, 1.0)
+    for label, name in DENSE_METHODS:
+        metrics = final_metrics(root / dataset / f"{name}_sd{seed}.stats", spec)
         if metrics is None:
-            metrics = [None] * width
+            rows.append([label, *[None] * (len(spec["index"]) + 1)])
+            continue
+        delta = None if stl is None else float(np.mean(sign * (metrics - stl) / stl) * 100)
+        rows.append([label, *metrics, delta])
+    print_table(dataset, ["Method", *spec["columns"], "Delta_m%"], rows)
 
-        rows.append([display] + metrics)
 
-    return rows
+def multimnist_runs(root, tag, method):
+    runs = [json.loads(p.read_text()) for p in sorted((root / tag / method).glob("seed*/summary.json"))]
+    return [r for r in runs if r["completed"]]
+
+
+def multimnist_tables(root):
+    rows = []
+    for label, method in MULTIMNIST_METHODS:
+        runs = multimnist_runs(root, "main", method)
+        rows.append([label, *([float(np.mean([r[k] for r in runs])) for k in ("left", "right", "avg")] if runs else [None] * 3)])
+    print_table("MultiMNIST", ["Method", "Left", "Right", "Avg."], rows)
+    rows = []
+    for folder in sorted(p for p in root.iterdir() if (p / "entropic_lmo_mgda").is_dir() and not p.name.startswith("validation")):
+        runs = multimnist_runs(root, folder.name, "entropic_lmo_mgda")
+        if runs:
+            rows.append([folder.name, float(np.mean([r["avg"] for r in runs])), float(np.mean([r["gap"] for r in runs])), len(runs)])
+    print_table("MultiMNIST ablations (Entropic LMO-MGDA)", ["Variant", "Avg.", "Gap", "Seeds"], rows)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Print run-derived results. Missing or incomplete runs are NA."
-    )
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument(
-        "--results",
-        type=Path,
-        default=Path(__file__).resolve().parent / "results",
-    )
-    args = parser.parse_args()
-
-    print("\n====================== CITYSCAPES ======================")
-    print("Mean over the final 10 epochs of completed runs only\n")
-    print_table(
-        [
-            "Method",
-            "mIoU (%)",
-            "Pix Acc (%)",
-            "Abs Err",
-            "Rel Err",
-            "Delta_m (%)",
-            "Wall h",
-        ],
-        collect(args.results, "cityscapes", args.seed),
-    )
-
-    print("\n======================== NYUv2 =========================")
-    print("Mean over the final 10 epochs of completed runs only\n")
-    print_table(
-        [
-            "Method",
-            "mIoU (%)",
-            "Pix Acc (%)",
-            "Abs Err",
-            "Rel Err",
-            "Normal Mean",
-            "Normal Median",
-            "<11.25 (%)",
-            "<22.5 (%)",
-            "<30 (%)",
-            "Delta_m (%)",
-            "Wall h",
-        ],
-        collect(args.results, "nyuv2", args.seed),
-    )
-
-    print("\nNA = no completed run-derived result is available.\n")
+    p = argparse.ArgumentParser()
+    p.add_argument("--results", type=Path, default=Path("results"))
+    p.add_argument("--seed", type=int, default=42)
+    args = p.parse_args()
+    for dataset in DENSE:
+        if (args.results / dataset).exists():
+            dense_table(args.results, dataset, args.seed)
+    if (args.results / "multimnist").exists():
+        multimnist_tables(args.results / "multimnist")
 
 
 if __name__ == "__main__":

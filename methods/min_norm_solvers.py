@@ -8,14 +8,11 @@ class MinNormSolver:
 
     @staticmethod
     def _min_norm_element_from2(v1v1, v1v2, v2v2):
-
         if v1v2 >= v1v1:
-
             gamma = 0.999
             cost = v1v1
             return gamma, cost
         if v1v2 >= v2v2:
-
             gamma = 0.001
             cost = v2v2
             return gamma, cost
@@ -26,7 +23,6 @@ class MinNormSolver:
 
     @staticmethod
     def _min_norm_2d(vecs, dps):
-
         dmin = 1e8
         for i in range(len(vecs)):
             for j in range(i + 1, len(vecs)):
@@ -59,7 +55,6 @@ class MinNormSolver:
 
     @staticmethod
     def _projection2simplex(y):
-
         m = len(y)
         sorted_y = np.flip(np.sort(y), axis=0)
         tmpsum = 0.0
@@ -78,7 +73,6 @@ class MinNormSolver:
         tm1 = -1.0 * cur_val[proj_grad < 0] / proj_grad[proj_grad < 0]
         tm2 = (1.0 - cur_val[proj_grad > 0]) / (proj_grad[proj_grad > 0])
 
-        skippers = np.sum(tm1 < 1e-7) + np.sum(tm2 < 1e-7)
         t = 1
         if len(tm1[tm1 > 1e-7]) > 0:
             t = np.min(tm1[tm1 > 1e-7])
@@ -91,7 +85,6 @@ class MinNormSolver:
 
     @staticmethod
     def find_min_norm_element(vecs):
-
         dps = {}
         init_sol, dps = MinNormSolver._min_norm_2d(vecs, dps)
 
@@ -101,7 +94,6 @@ class MinNormSolver:
         sol_vec[init_sol[0][1]] = 1 - init_sol[1]
 
         if n < 3:
-
             return sol_vec, init_sol[2]
 
         iter_count = 0
@@ -132,7 +124,6 @@ class MinNormSolver:
 
     @staticmethod
     def find_min_norm_element_FW(vecs):
-
         dps = {}
         init_sol, dps = MinNormSolver._min_norm_2d(vecs, dps)
 
@@ -142,7 +133,6 @@ class MinNormSolver:
         sol_vec[init_sol[0][1]] = 1 - init_sol[1]
 
         if n < 3:
-
             return sol_vec, init_sol[2]
 
         iter_count = 0
